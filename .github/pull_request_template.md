@@ -1,10 +1,12 @@
+<!-- PR title format: "KAN-123: short description" -->
+
+## Jira
+
+KAN-
+
 ## What
 
 <!-- What does this PR change? -->
-
-## Why
-
-<!-- Link the issue (e.g. "Closes #12") or explain the motivation. -->
 
 ## How to test
 
