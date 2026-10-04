@@ -1,0 +1,61 @@
+build:
+  maxIssues: 0
+
+complexity:
+  LongMethod:
+    threshold: 80
+  LongParameterList:
+    functionThreshold: 10
+    constructorThreshold: 25
+    ignoreDataClasses: true
+  TooManyFunctions:
+    active: false
+  ComplexCondition:
+    active: false
+  CyclomaticComplexMethod:
+    threshold: 25
+  NestedBlockDepth:
+    threshold: 5
+  LargeClass:
+    threshold: 800
+
+style:
+  MagicNumber:
+    active: false
+  MaxLineLength:
+    maxLineLength: 140
+  ReturnCount:
+    active: false
+  ThrowsCount:
+    max: 6
+  UnusedPrivateMember:
+    active: true
+  WildcardImport:
+    active: false
+  UnnecessaryAbstractClass:
+    active: false
+  UseRequire:
+    active: false
+  UseCheckOrError:
+    active: false
+
+performance:
+  SpreadOperator:
+    active: false
+
+potential-bugs:
+  UnsafeCallOnNullableType:
+    active: false
+
+exceptions:
+  TooGenericExceptionCaught:
+    active: false
+  SwallowedException:
+    active: false
+
+naming:
+  FunctionNaming:
+    ignoreAnnotated:
+      - "Test"
+  TopLevelPropertyNaming:
+    constantPattern: "[A-Za-z][_A-Za-z0-9]*"
