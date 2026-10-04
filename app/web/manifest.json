@@ -1,0 +1,12 @@
+{
+  "name": "Future Todo",
+  "short_name": "Future Todo",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#2564CF",
+  "description": "Cross-platform task manager",
+  "orientation": "portrait-primary",
+  "prefer_related_applications": false,
+  "icons": []
+}
