@@ -22,12 +22,54 @@ What this means for the work:
 
 ## Current state
 
-The stack is chosen, but there is no application code yet. The repo only has scaffolding (README, Apache-2.0 LICENSE, CONTRIBUTING, SECURITY, ARCHITECTURE, and `.github/` templates). Dependabot only watches `github-actions`, and there is no CI workflow.
+The stack is chosen. Infrastructure and tooling are in place (`docker-compose.yml`, `.github/workflows/`, Dockerfiles, `.env.example`, Dependabot for `github-actions`, `gradle`, `pub`, `docker`). Application code lives in `backend/` and `app/`; only the Flutter **web** client and the monolithic backend are in scope for now.
 
-When code lands:
-- Add build/lint/test commands to this file, including how to run a single test and how to run each test level (unit, integration, e2e) for both `app/` and `backend/`.
-- Add the `pub`, `gradle`, and `docker` ecosystems to `.github/dependabot.yml`.
+When code changes:
 - Update `ARCHITECTURE.md` wherever the code differs from the plan.
+- Keep the commands below in sync with `backend/build.gradle.kts` and `app/pubspec.yaml`.
+
+## Commands
+
+Local services (Postgres, MinIO, Mailpit): `cp .env.example .env`, then `docker compose up -d`. Stop with `docker compose down` (add `-v` to wipe data). Ports: Postgres 5432, MinIO 9000/9001 (console), Mailpit SMTP 1025 / UI 8025.
+
+### Backend (`backend/`, run from that directory)
+
+There is no Gradle wrapper yet: run `gradle wrapper` once (then use `./gradlew` instead of `gradle`). All test levels run under the single `test` task and are split by class name.
+
+| Task | Command |
+|---|---|
+| Run the app (after `docker compose up -d`) | `gradle bootRun` (health: http://localhost:8080/actuator/health; OpenAPI: `/v3/api-docs`) |
+| Lint | `gradle ktlintCheck detekt` (auto-format: `gradle ktlintFormat`) |
+| Unit tests (JUnit 5 + MockK, plus `ModularityTest`) | `gradle test --tests "*AuthServiceTest" --tests "*JwtAndLimiterTest" --tests "*SharedTest" --tests "*TasksUnitTest" --tests "*ModularityTest"` |
+| Integration tests (Testcontainers PostgreSQL, needs Docker) | `gradle test --tests "*IntegrationTest"` |
+| E2E / API tests (HTTP level) | `gradle test --tests "*E2eTest"` |
+| Everything | `gradle test` |
+| Coverage gate (>= 80%) | `gradle koverHtmlReport koverVerify` (report: `build/reports/kover/html`) |
+| Single test class / method | `gradle test --tests "com.futuretodo.FutureTodoE2eTest"` / `--tests "*SomeTest.someMethod"` |
+| Jar / Docker image | `gradle bootJar` / `docker build -t future-todo-backend backend` |
+
+When adding a test class, name it `*Test` (unit), `*IntegrationTest` or `*E2eTest`, and add new unit classes to the unit filter list in `.github/workflows/backend.yml`.
+
+Config (env vars): `DB_URL`/`DB_USER`/`DB_PASSWORD` (defaults match `docker-compose.yml`), `MAIL_HOST`/`MAIL_PORT`, `JWT_SECRET`, `FRONTEND_URL`, `CORS_ORIGINS`, `ADMIN_EMAIL`/`ADMIN_PASSWORD`, `OAUTH_GOOGLE_CLIENT_ID`/`OAUTH_APPLE_CLIENT_ID`/`OAUTH_MICROSOFT_CLIENT_ID`.
+
+### App (`app/`, run from that directory)
+
+Only `web/index.html` and `web/manifest.json` are committed. Before the first run: `flutter create . --platforms web` (keep the committed web files; delete the generated `test/widget_test.dart`) and put `sqlite3.wasm` and `drift_worker.js` into `web/` (CI and the Dockerfile do this automatically). Drift tests use an in-memory SQLite and need system `libsqlite3` (`apt install libsqlite3-dev`).
+
+| Task | Command |
+|---|---|
+| Install deps | `flutter pub get` |
+| Generate code (Drift) | `dart run build_runner build --delete-conflicting-outputs` |
+| Lint | `dart format --set-exit-if-changed lib test` and `flutter analyze --fatal-infos` |
+| Unit + widget tests with coverage | `flutter test --coverage` (report in `coverage/lcov.info`; CI requires >= 80%) |
+| Single test file / test by name | `flutter test test/core/hlc_test.dart` / `flutter test --plain-name "some name"` |
+| E2E on web (guest flow, no backend; needs chromedriver on port 4444) | `chromedriver --port=4444 &` then `flutter drive --driver=test_driver/integration_test.dart --target=integration_test/app_test.dart -d web-server --browser-name=chrome --headless` |
+| Run in Chrome against the backend | `flutter run -d chrome --web-port 8081 --dart-define=API_BASE_URL=http://localhost:8080` |
+| Web build / Docker image | `flutter build web --release --dart-define=API_BASE_URL=...` / `docker build -t future-todo-app app` |
+
+### CI (`.github/workflows/`)
+
+`backend.yml` and `app.yml` are path-filtered and run on pushes to `main` and on pull requests. Each test level is its own job (`unit-tests`, `integration-tests`, `e2e-tests` for the backend; `unit-tests`, `e2e-web` for the app, which needs no backend), so a failing level stops the pipeline on its own job. The pipelines are CI only (build, lint, test, coverage); there is no deploy yet.
 
 ## Stack and architecture
 
