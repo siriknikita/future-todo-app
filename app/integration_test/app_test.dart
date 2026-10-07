@@ -31,6 +31,17 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// Drift on the web writes through a Web Worker, so a change can land
+  /// after pumpAndSettle returns (more often on slow CI machines). Wait for
+  /// [finder] in real time before asserting on it.
+  Future<void> pumpUntilFound(WidgetTester tester, Finder finder) async {
+    final deadline = DateTime.now().add(const Duration(seconds: 10));
+    while (finder.evaluate().isEmpty && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await tester.pump();
+    }
+  }
+
   testWidgets('create a list, add a task, mark it done; data survives restart',
       (tester) async {
     final dbName = 'e2e_${DateTime.now().millisecondsSinceEpoch}';
@@ -42,17 +53,20 @@ void main() {
     await tester.enterText(find.byKey(const Key('prompt-field')), 'Groceries');
     await tester.tap(find.byKey(const Key('prompt-ok')));
     await tester.pumpAndSettle();
+    await pumpUntilFound(tester, find.text('Groceries'));
     expect(find.text('Groceries'), findsWidgets);
 
     // Add a task and see it in the list.
     await tester.enterText(find.byKey(const Key('quick-add')), 'Buy milk');
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pumpAndSettle();
+    await pumpUntilFound(tester, find.text('Buy milk'));
     expect(find.text('Buy milk'), findsOneWidget);
 
     // Mark it done.
     await tester.tap(find.byType(Checkbox).first);
     await tester.pumpAndSettle();
+    await pumpUntilFound(tester, find.text('Completed (1)'));
     expect(find.text('Completed (1)'), findsOneWidget);
 
     // Restart the app on the same database: the task is still there.
@@ -61,6 +75,7 @@ void main() {
     await start(tester, dbName);
     await tester.tap(find.byKey(const ValueKey('smart-all')));
     await tester.pumpAndSettle();
+    await pumpUntilFound(tester, find.text('Buy milk'));
     expect(find.text('Buy milk'), findsOneWidget);
   });
 }
