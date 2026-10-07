@@ -1,7 +1,7 @@
 # Build context: app/   (docker build -t future-todo-app app)
 
 # ---- Build stage: Flutter web ----
-FROM ghcr.io/cirruslabs/flutter:stable AS build
+FROM ghcr.io/cirruslabs/flutter:3.38.5 AS build
 WORKDIR /app
 COPY . .
 # Platform files and Drift web assets are not committed yet: generate/fetch them

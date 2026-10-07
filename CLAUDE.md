@@ -54,6 +54,8 @@ Config (env vars): `DB_URL`/`DB_USER`/`DB_PASSWORD` (defaults match `docker-comp
 
 ### App (`app/`, run from that directory)
 
+Use Flutter **3.38.5**, the version pinned in `.github/workflows/app.yml` and `app/Dockerfile` (newer releases add lints and deprecations that fail `flutter analyze --fatal-infos`). Bump all three together.
+
 Only `web/index.html` and `web/manifest.json` are committed. Before the first run: `flutter create . --platforms web` (keep the committed web files; delete the generated `test/widget_test.dart`) and put `sqlite3.wasm` and `drift_worker.js` into `web/` (CI and the Dockerfile do this automatically). Drift tests use an in-memory SQLite and need system `libsqlite3` (`apt install libsqlite3-dev`).
 
 | Task | Command |

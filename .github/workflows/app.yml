@@ -22,6 +22,9 @@ permissions:
 
 env:
   COVERAGE_MIN: "80"
+  # Pinned so a new Flutter release cannot change lints or behavior under us.
+  # Keep in sync with app/Dockerfile and CLAUDE.md.
+  FLUTTER_VERSION: "3.38.5"
 
 defaults:
   run:
@@ -36,6 +39,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get
       - name: Generate code (build_runner)
@@ -53,6 +57,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get
       - run: dart run build_runner build --delete-conflicting-outputs
@@ -88,6 +93,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get
       - run: dart run build_runner build --delete-conflicting-outputs
@@ -119,6 +125,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get
       - run: dart run build_runner build --delete-conflicting-outputs
