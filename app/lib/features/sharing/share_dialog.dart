@@ -103,7 +103,7 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
                   onPressed: () => _run(() async {
                     await api.revokeInvitations(list.id);
                     setState(() => _link = null);
-                    if (mounted) showMessage(context, l.linksRevoked);
+                    if (context.mounted) showMessage(context, l.linksRevoked);
                   }),
                   child: Text(l.revokeLinks),
                 ),
@@ -141,7 +141,7 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
                   onPressed: () => _run(() async {
                     await api.removeMember(list.id, auth.user!.id);
                     await ref.read(syncServiceProvider).syncNow();
-                    if (mounted) Navigator.pop(context);
+                    if (context.mounted) Navigator.pop(context);
                   }),
                   child: Text(l.leaveList),
                 ),

@@ -26,8 +26,7 @@ class _AuthScaffold extends StatelessWidget {
         appBar: AppBar(
           title: Text(title),
           leading: BackButton(
-            onPressed: () =>
-                context.canPop() ? context.pop() : context.go('/'),
+            onPressed: () => context.canPop() ? context.pop() : context.go('/'),
           ),
         ),
         body: Center(
@@ -72,7 +71,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           .login(_email.text.trim(), _password.text);
       if (mounted) context.go('/');
     } on Object catch (e) {
-      if (mounted) showMessage(context, '${AppLocalizations.of(context).errorGeneric}: $e');
+      if (mounted) {
+        showMessage(
+          context,
+          '${AppLocalizations.of(context).errorGeneric}: $e',
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -158,7 +162,12 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
           );
       if (mounted) setState(() => _sent = true);
     } on Object catch (e) {
-      if (mounted) showMessage(context, '${AppLocalizations.of(context).errorGeneric}: $e');
+      if (mounted) {
+        showMessage(
+          context,
+          '${AppLocalizations.of(context).errorGeneric}: $e',
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -224,8 +233,7 @@ class ForgotPasswordPage extends ConsumerStatefulWidget {
   const ForgotPasswordPage({super.key});
 
   @override
-  ConsumerState<ForgotPasswordPage> createState() =>
-      _ForgotPasswordPageState();
+  ConsumerState<ForgotPasswordPage> createState() => _ForgotPasswordPageState();
 }
 
 class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
@@ -247,7 +255,12 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
           .requestPasswordReset(_email.text.trim());
       if (mounted) setState(() => _sent = true);
     } on Object catch (e) {
-      if (mounted) showMessage(context, '${AppLocalizations.of(context).errorGeneric}: $e');
+      if (mounted) {
+        showMessage(
+          context,
+          '${AppLocalizations.of(context).errorGeneric}: $e',
+        );
+      }
     }
   }
 
@@ -310,7 +323,12 @@ class _ResetPasswordPageState extends ConsumerState<ResetPasswordPage> {
           .resetPassword(widget.token ?? '', _password.text);
       if (mounted) setState(() => _done = true);
     } on Object catch (e) {
-      if (mounted) showMessage(context, '${AppLocalizations.of(context).errorGeneric}: $e');
+      if (mounted) {
+        showMessage(
+          context,
+          '${AppLocalizations.of(context).errorGeneric}: $e',
+        );
+      }
     }
   }
 
@@ -419,7 +437,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   @override
   void initState() {
     super.initState();
-    _name = TextEditingController(text: ref.read(authProvider).user?.name ?? '');
+    _name =
+        TextEditingController(text: ref.read(authProvider).user?.name ?? '');
   }
 
   @override
@@ -457,7 +476,10 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(user?.email ?? '', style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            user?.email ?? '',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           TextField(
             key: const Key('profile-name'),
             controller: _name,

@@ -161,7 +161,10 @@ void main() {
     await repo.moveTask(id, l2);
     final t = (await repo.getTask(id))!;
     expect(t.dueDate, '2025-01-09');
-    expect(t.reminderAt!.millisecondsSinceEpoch, reminder.millisecondsSinceEpoch);
+    expect(
+      t.reminderAt!.millisecondsSinceEpoch,
+      reminder.millisecondsSinceEpoch,
+    );
     expect(t.note, 'note');
     expect(t.isImportant, isTrue);
     expect(t.listId, l2);

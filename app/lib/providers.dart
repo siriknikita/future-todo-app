@@ -103,6 +103,7 @@ final todayProvider = StreamProvider<DateTime>((ref) {
 // ------------------------------------------------------------------ selection
 
 /// What the task area shows: a regular list or a smart list.
+@immutable
 class ViewSelection {
   const ViewSelection.list(String this.listId) : smart = null;
   const ViewSelection.smart(SmartList this.smart) : listId = null;

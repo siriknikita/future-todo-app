@@ -50,8 +50,12 @@ void main() {
       makeTask(id: 'c'),
     ];
     expect(
-      filterSmartList(SmartList.assignedToMe, tasks, now: now, currentUserId: 'me')
-          .map((t) => t.id),
+      filterSmartList(
+        SmartList.assignedToMe,
+        tasks,
+        now: now,
+        currentUserId: 'me',
+      ).map((t) => t.id),
       ['a'],
     );
     expect(filterSmartList(SmartList.assignedToMe, tasks, now: now), isEmpty);
@@ -75,8 +79,14 @@ void main() {
       expect(plannedBucket('2025-01-07', now), PlannedBucket.overdue);
       expect(plannedBucket('2025-01-08', now), PlannedBucket.today);
       expect(plannedBucket('2025-01-09', now), PlannedBucket.tomorrow);
-      expect(plannedBucket('2025-01-12', now), PlannedBucket.thisWeek); // Sunday
-      expect(plannedBucket('2025-01-13', now), PlannedBucket.later); // next Monday
+      expect(
+        plannedBucket('2025-01-12', now),
+        PlannedBucket.thisWeek,
+      ); // Sunday
+      expect(
+        plannedBucket('2025-01-13', now),
+        PlannedBucket.later,
+      ); // next Monday
     });
 
     test('on Sunday only today/tomorrow come before "later"', () {
@@ -86,11 +96,14 @@ void main() {
     });
 
     test('groupPlanned sorts inside buckets and skips undated tasks', () {
-      final grouped = groupPlanned([
-        makeTask(id: 'b', dueDate: '2025-01-10'),
-        makeTask(id: 'a', dueDate: '2025-01-09'),
-        makeTask(id: 'x'),
-      ], now);
+      final grouped = groupPlanned(
+        [
+          makeTask(id: 'b', dueDate: '2025-01-10'),
+          makeTask(id: 'a', dueDate: '2025-01-09'),
+          makeTask(id: 'x'),
+        ],
+        now,
+      );
       expect(grouped[PlannedBucket.thisWeek]!.map((t) => t.id), ['a', 'b']);
       expect(grouped.values.expand((e) => e), hasLength(2));
     });

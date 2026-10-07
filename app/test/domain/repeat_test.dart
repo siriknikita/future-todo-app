@@ -5,7 +5,10 @@ void main() {
   DateTime? next(RepeatRule rule, DateTime from) => nextOccurrence(rule, from);
 
   test('none does not repeat', () {
-    expect(next(const RepeatRule(RepeatType.none), DateTime(2025, 1, 1)), isNull);
+    expect(
+      next(const RepeatRule(RepeatType.none), DateTime(2025)),
+      isNull,
+    );
   });
 
   test('daily adds one day, across month end', () {
@@ -17,7 +20,10 @@ void main() {
 
   test('custom interval adds N days', () {
     expect(
-      next(const RepeatRule(RepeatType.custom, interval: 10), DateTime(2025, 1, 25)),
+      next(
+        const RepeatRule(RepeatType.custom, interval: 10),
+        DateTime(2025, 1, 25),
+      ),
       DateTime(2025, 2, 4),
     );
   });
@@ -45,9 +51,18 @@ void main() {
     // Mon + Wed + Fri
     const mask = 1 | 4 | 16;
     const rule = RepeatRule(RepeatType.weekly, weekdayMask: mask);
-    expect(next(rule, DateTime(2025, 1, 6)), DateTime(2025, 1, 8)); // Mon -> Wed
-    expect(next(rule, DateTime(2025, 1, 8)), DateTime(2025, 1, 10)); // Wed -> Fri
-    expect(next(rule, DateTime(2025, 1, 10)), DateTime(2025, 1, 13)); // Fri -> Mon
+    expect(
+      next(rule, DateTime(2025, 1, 6)),
+      DateTime(2025, 1, 8),
+    ); // Mon -> Wed
+    expect(
+      next(rule, DateTime(2025, 1, 8)),
+      DateTime(2025, 1, 10),
+    ); // Wed -> Fri
+    expect(
+      next(rule, DateTime(2025, 1, 10)),
+      DateTime(2025, 1, 13),
+    ); // Fri -> Mon
   });
 
   test('weekly every 2 weeks skips a whole week', () {
@@ -62,7 +77,10 @@ void main() {
       DateTime(2025, 2, 28),
     );
     expect(
-      next(const RepeatRule(RepeatType.monthly, interval: 2), DateTime(2025, 11, 15)),
+      next(
+        const RepeatRule(RepeatType.monthly, interval: 2),
+        DateTime(2025, 11, 15),
+      ),
       DateTime(2026, 1, 15),
     );
   });

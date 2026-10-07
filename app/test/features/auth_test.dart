@@ -11,7 +11,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('login-submit')), findsOneWidget);
 
-    await tester.enterText(find.byKey(const Key('login-email')), 'not-an-email');
+    await tester.enterText(
+      find.byKey(const Key('login-email')),
+      'not-an-email',
+    );
     await tester.tap(find.byKey(const Key('login-submit')));
     await tester.pumpAndSettle();
     expect(find.text('Enter a valid email'), findsOneWidget);

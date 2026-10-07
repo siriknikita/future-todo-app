@@ -140,7 +140,8 @@ class TaskDetails extends ConsumerWidget {
             title: Text(
               task.dueDate == null
                   ? l.addDueDate
-                  : DateFormat.yMMMEd(locale).format(parseDateKey(task.dueDate!)),
+                  : DateFormat.yMMMEd(locale)
+                      .format(parseDateKey(task.dueDate!)),
             ),
             trailing: task.dueDate == null
                 ? null
@@ -151,9 +152,8 @@ class TaskDetails extends ConsumerWidget {
             onTap: () async {
               final picked = await showDatePicker(
                 context: context,
-                initialDate: task.dueDate == null
-                    ? now
-                    : parseDateKey(task.dueDate!),
+                initialDate:
+                    task.dueDate == null ? now : parseDateKey(task.dueDate!),
                 firstDate: DateTime(2000),
                 lastDate: DateTime(2100),
               );
@@ -190,7 +190,13 @@ class TaskDetails extends ConsumerWidget {
               if (time == null) return;
               await repo.setReminder(
                 task.id,
-                DateTime(date.year, date.month, date.day, time.hour, time.minute),
+                DateTime(
+                  date.year,
+                  date.month,
+                  date.day,
+                  time.hour,
+                  time.minute,
+                ),
               );
             },
           ),
@@ -215,9 +221,8 @@ class TaskDetails extends ConsumerWidget {
             title: Text(l.moveToList),
             trailing: DropdownButton<String>(
               key: const Key('move-list-dropdown'),
-              value: lists.any((li) => li.id == task.listId)
-                  ? task.listId
-                  : null,
+              value:
+                  lists.any((li) => li.id == task.listId) ? task.listId : null,
               items: [
                 for (final li in lists)
                   DropdownMenuItem(value: li.id, child: Text(li.name)),
@@ -247,12 +252,11 @@ class TaskDetails extends ConsumerWidget {
               label: Text(l.deleteTask),
               onPressed: () async {
                 final messenger = ScaffoldMessenger.of(context);
+                final navigator = Navigator.of(context);
+                final narrow = MediaQuery.sizeOf(context).width < 1000;
                 await repo.deleteTask(task.id);
                 ref.read(selectedTaskIdProvider.notifier).state = null;
-                if (Navigator.of(context).canPop() &&
-                    MediaQuery.sizeOf(context).width < 1000) {
-                  Navigator.of(context).pop();
-                }
+                if (navigator.canPop() && narrow) navigator.pop();
                 // Undo within 5 seconds (FR-3.12).
                 messenger
                   ..hideCurrentSnackBar()
