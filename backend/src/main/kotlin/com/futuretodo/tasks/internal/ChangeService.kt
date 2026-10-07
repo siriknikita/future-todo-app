@@ -40,7 +40,7 @@ class ChangeService(
         val created = existingClocks == null
         val before = if (spec === EntitySpecs.TASK && !created) repo.findTask(change.id) else null
 
-        authorize(userId, spec, change.id, fields, created)
+        authorize(userId, spec, change.id, fields, exists = !created)
         if (created) {
             create(userId, spec, change.id, fields)
         }
