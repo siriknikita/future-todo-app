@@ -16,7 +16,7 @@ cd backend && gradle bootRun               # API on http://localhost:8080 (no wr
 
 cd app && flutter create . --platforms web # once; keep the committed web/index.html and manifest.json
 # also put sqlite3.wasm and drift_worker.js into app/web/ (see CLAUDE.md)
-flutter pub get && dart run build_runner build --delete-conflicting-outputs
+flutter pub get && dart run build_runner build --delete-conflicting-outputs --force-jit
 flutter run -d chrome --web-port 8081 --dart-define=API_BASE_URL=http://localhost:8080
 ```
 

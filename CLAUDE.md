@@ -61,7 +61,7 @@ Only `web/index.html` and `web/manifest.json` are committed. Before the first ru
 | Task | Command |
 |---|---|
 | Install deps | `flutter pub get` |
-| Generate code (Drift) | `dart run build_runner build --delete-conflicting-outputs` |
+| Generate code (Drift) | `dart run build_runner build --delete-conflicting-outputs --force-jit` |
 | Lint | `dart format --set-exit-if-changed lib test` and `flutter analyze --fatal-infos` |
 | Unit + widget tests with coverage | `flutter test --coverage` (report in `coverage/lcov.info`; CI requires >= 80%) |
 | Single test file / test by name | `flutter test test/core/hlc_test.dart` / `flutter test --plain-name "some name"` |
