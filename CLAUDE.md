@@ -40,7 +40,7 @@ There is no Gradle wrapper yet: run `gradle wrapper` once (then use `./gradlew` 
 |---|---|
 | Run the app (after `docker compose up -d`) | `gradle bootRun` (health: http://localhost:8080/actuator/health; OpenAPI: `/v3/api-docs`) |
 | Lint | `gradle ktlintCheck detekt` (auto-format: `gradle ktlintFormat`) |
-| Unit tests (JUnit 5 + MockK, plus `ModularityTest`) | `gradle test --tests "*AuthServiceTest" --tests "*JwtAndLimiterTest" --tests "*SharedTest" --tests "*TasksUnitTest" --tests "*ModularityTest"` |
+| Unit tests (JUnit 5 + MockK, plus `ModularityTest`) | `gradle test --tests "*AuthServiceTest" --tests "*JwtAndLimiterTest" --tests "*LwwTest" --tests "*HlcClockTest" --tests "*RecurrenceCalculatorTest" --tests "*EntitySpecsTest" --tests "*SearchAndSmartListTest" --tests "*ModularityTest"` |
 | Integration tests (Testcontainers PostgreSQL, needs Docker) | `gradle test --tests "*IntegrationTest"` |
 | E2E / API tests (HTTP level) | `gradle test --tests "*E2eTest"` |
 | Everything | `gradle test` |
@@ -48,7 +48,7 @@ There is no Gradle wrapper yet: run `gradle wrapper` once (then use `./gradlew` 
 | Single test class / method | `gradle test --tests "com.futuretodo.FutureTodoE2eTest"` / `--tests "*SomeTest.someMethod"` |
 | Jar / Docker image | `gradle bootJar` / `docker build -t future-todo-backend backend` |
 
-When adding a test class, name it `*Test` (unit), `*IntegrationTest` or `*E2eTest`, and add new unit classes to the unit filter list in `.github/workflows/backend.yml`.
+When adding a test class, name it `*Test` (unit), `*IntegrationTest` or `*E2eTest`, and add new unit classes to the unit filter list in `.github/workflows/backend.yml`. The filter matches class names, not file names, so list every class in a file that holds several.
 
 Config (env vars): `DB_URL`/`DB_USER`/`DB_PASSWORD` (defaults match `docker-compose.yml`), `MAIL_HOST`/`MAIL_PORT`, `JWT_SECRET`, `FRONTEND_URL`, `CORS_ORIGINS`, `ADMIN_EMAIL`/`ADMIN_PASSWORD`, `OAUTH_GOOGLE_CLIENT_ID`/`OAUTH_APPLE_CLIENT_ID`/`OAUTH_MICROSOFT_CLIENT_ID`.
 

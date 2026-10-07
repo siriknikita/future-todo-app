@@ -55,7 +55,7 @@ jobs:
         with:
           gradle-version: "8.11.1" # no wrapper committed yet
       - name: Unit tests (JUnit 5 + MockK)
-        run: gradle test --tests "*AuthServiceTest" --tests "*JwtAndLimiterTest" --tests "*SharedTest" --tests "*TasksUnitTest" --tests "*ModularityTest"
+        run: gradle test --tests "*AuthServiceTest" --tests "*JwtAndLimiterTest" --tests "*LwwTest" --tests "*HlcClockTest" --tests "*RecurrenceCalculatorTest" --tests "*EntitySpecsTest" --tests "*SearchAndSmartListTest" --tests "*ModularityTest"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
