@@ -75,14 +75,18 @@ abstract class IntegrationTestBase {
         val token = jdbc.queryForObject(
             "SELECT t.token FROM accounts.email_tokens t JOIN accounts.users u ON u.id = t.user_id " +
                 "WHERE u.email = ? AND t.kind = 'VERIFY'",
-            String::class.java, email,
+            String::class.java,
+            email,
         )!!
         check(api.post("/auth/verify-email", body = mapOf("token" to token)).status == 204)
         val login = api.post("/auth/login", body = mapOf("email" to email, "password" to password, "platform" to "web"))
         check(login.status == 200)
         val json = login.json()
         return TestUser(
-            email, password, json["accessToken"].asText(), json["refreshToken"].asText(),
+            email,
+            password,
+            json["accessToken"].asText(),
+            json["refreshToken"].asText(),
             UUID.fromString(json["user"]["id"].asText()),
         )
     }

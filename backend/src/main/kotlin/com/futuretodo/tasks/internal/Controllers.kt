@@ -49,7 +49,9 @@ class ListController(
 
     @PostMapping("/list-groups")
     @ResponseStatus(HttpStatus.CREATED)
-    fun createGroup(@RequestBody body: Map<String, Any?>): GroupDto {
+    fun createGroup(
+        @RequestBody body: Map<String, Any?>
+    ): GroupDto {
         requireText(body, "name")
         val id = UUID.randomUUID()
         changes.writeRest(CurrentUser.id(), EntitySpecs.GROUP, id, withPosition(body))
@@ -57,7 +59,10 @@ class ListController(
     }
 
     @PatchMapping("/list-groups/{id}")
-    fun updateGroup(@PathVariable id: UUID, @RequestBody body: Map<String, Any?>): GroupDto {
+    fun updateGroup(
+        @PathVariable id: UUID,
+        @RequestBody body: Map<String, Any?>
+    ): GroupDto {
         ownGroup(id)
         changes.writeRest(CurrentUser.id(), EntitySpecs.GROUP, id, body)
         return repo.findGroup(id)!!
@@ -65,7 +70,9 @@ class ListController(
 
     @DeleteMapping("/list-groups/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    fun deleteGroup(@PathVariable id: UUID) {
+    fun deleteGroup(
+        @PathVariable id: UUID
+    ) {
         val user = CurrentUser.id()
         ownGroup(id)
         repo.listsInGroup(id, user).forEach { changes.writeRest(user, EntitySpecs.LIST, it.id, mapOf("groupId" to null)) }
@@ -77,7 +84,9 @@ class ListController(
 
     @PostMapping("/lists")
     @ResponseStatus(HttpStatus.CREATED)
-    fun createList(@RequestBody body: Map<String, Any?>): ListDto {
+    fun createList(
+        @RequestBody body: Map<String, Any?>
+    ): ListDto {
         requireText(body, "name")
         val id = UUID.randomUUID()
         changes.writeRest(CurrentUser.id(), EntitySpecs.LIST, id, withPosition(body))
@@ -85,10 +94,15 @@ class ListController(
     }
 
     @GetMapping("/lists/{id}")
-    fun getList(@PathVariable id: UUID): ListDto = visibleList(id)
+    fun getList(
+        @PathVariable id: UUID
+    ): ListDto = visibleList(id)
 
     @PatchMapping("/lists/{id}")
-    fun updateList(@PathVariable id: UUID, @RequestBody body: Map<String, Any?>): ListDto {
+    fun updateList(
+        @PathVariable id: UUID,
+        @RequestBody body: Map<String, Any?>
+    ): ListDto {
         visibleList(id)
         changes.writeRest(CurrentUser.id(), EntitySpecs.LIST, id, body)
         return repo.findList(id)!!
@@ -96,7 +110,9 @@ class ListController(
 
     @DeleteMapping("/lists/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    fun deleteList(@PathVariable id: UUID) {
+    fun deleteList(
+        @PathVariable id: UUID
+    ) {
         visibleList(id)
         changes.writeRest(CurrentUser.id(), EntitySpecs.LIST, id, mapOf("deleted" to true))
     }
@@ -138,7 +154,10 @@ class TaskController(
 
     @PostMapping("/lists/{listId}/tasks")
     @ResponseStatus(HttpStatus.CREATED)
-    fun createTask(@PathVariable listId: UUID, @RequestBody body: Map<String, Any?>): TaskDto {
+    fun createTask(
+        @PathVariable listId: UUID,
+        @RequestBody body: Map<String, Any?>
+    ): TaskDto {
         visibleList(listId)
         requireText(body, "title")
         val id = UUID.randomUUID()
@@ -147,10 +166,15 @@ class TaskController(
     }
 
     @GetMapping("/tasks/{id}")
-    fun getTask(@PathVariable id: UUID): TaskDto = withSteps(visibleTask(id, false))
+    fun getTask(
+        @PathVariable id: UUID
+    ): TaskDto = withSteps(visibleTask(id, false))
 
     @PatchMapping("/tasks/{id}")
-    fun updateTask(@PathVariable id: UUID, @RequestBody body: Map<String, Any?>): TaskDto {
+    fun updateTask(
+        @PathVariable id: UUID,
+        @RequestBody body: Map<String, Any?>
+    ): TaskDto {
         visibleTask(id, true)
         val data = body.toMutableMap()
         if (data.containsKey("completed") && !data.containsKey("completedAt")) {
@@ -162,20 +186,27 @@ class TaskController(
 
     @DeleteMapping("/tasks/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    fun deleteTask(@PathVariable id: UUID) {
+    fun deleteTask(
+        @PathVariable id: UUID
+    ) {
         visibleTask(id, false)
         changes.writeRest(CurrentUser.id(), EntitySpecs.TASK, id, mapOf("deleted" to true))
     }
 
     @GetMapping("/tasks/{taskId}/steps")
-    fun steps(@PathVariable taskId: UUID): List<StepDto> {
+    fun steps(
+        @PathVariable taskId: UUID
+    ): List<StepDto> {
         visibleTask(taskId, false)
         return repo.stepsOfTask(taskId)
     }
 
     @PostMapping("/tasks/{taskId}/steps")
     @ResponseStatus(HttpStatus.CREATED)
-    fun createStep(@PathVariable taskId: UUID, @RequestBody body: Map<String, Any?>): StepDto {
+    fun createStep(
+        @PathVariable taskId: UUID,
+        @RequestBody body: Map<String, Any?>
+    ): StepDto {
         visibleTask(taskId, false)
         requireText(body, "title")
         val id = UUID.randomUUID()
@@ -184,7 +215,10 @@ class TaskController(
     }
 
     @PatchMapping("/steps/{id}")
-    fun updateStep(@PathVariable id: UUID, @RequestBody body: Map<String, Any?>): StepDto {
+    fun updateStep(
+        @PathVariable id: UUID,
+        @RequestBody body: Map<String, Any?>
+    ): StepDto {
         visibleStep(id)
         changes.writeRest(CurrentUser.id(), EntitySpecs.STEP, id, body - "taskId")
         return repo.findStep(id)!!
@@ -192,7 +226,9 @@ class TaskController(
 
     @DeleteMapping("/steps/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    fun deleteStep(@PathVariable id: UUID) {
+    fun deleteStep(
+        @PathVariable id: UUID
+    ) {
         visibleStep(id)
         changes.writeRest(CurrentUser.id(), EntitySpecs.STEP, id, mapOf("deleted" to true))
     }
@@ -285,7 +321,10 @@ class SmartListController(private val repo: TaskRepository, private val access: 
     }
 
     @GetMapping("/search")
-    fun search(@RequestParam q: String, @RequestParam(defaultValue = "false") includeCompleted: Boolean): List<TaskDto> {
+    fun search(
+        @RequestParam q: String,
+        @RequestParam(defaultValue = "false") includeCompleted: Boolean
+    ): List<TaskDto> {
         val query = SearchQuery.toTsQuery(q) ?: return emptyList()
         return repo.withSteps(repo.search(access.accessibleListIds(CurrentUser.id()), query, includeCompleted))
     }

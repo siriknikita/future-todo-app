@@ -193,8 +193,17 @@ class ChangeService(
         val newId = UUID.randomUUID()
         val stamp = hlc.next()
         val taskClocks = listOf(
-            "listId", "title", "note", "important", "dueDate", "reminderAt", "repeatType", "repeatInterval", "repeatDays",
-            "assigneeId", "position",
+            "listId",
+            "title",
+            "note",
+            "important",
+            "dueDate",
+            "reminderAt",
+            "repeatType",
+            "repeatInterval",
+            "repeatDays",
+            "assigneeId",
+            "position",
         ).associateWith { stamp }
         repo.insertTaskCopy(newId, task, next, task.reminderAt?.plusDays(shift), taskClocks)
         events.publishEvent(EntityChanged("task", newId, task.listId, userId, false, repo.findTask(newId)!!))

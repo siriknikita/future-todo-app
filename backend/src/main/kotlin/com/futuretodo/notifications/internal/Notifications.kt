@@ -58,7 +58,11 @@ class NotificationService(
         )
         jdbc.update(
             "INSERT INTO notifications.notifications (id, user_id, type, title, body, data) VALUES (?, ?, 'TASK_ASSIGNED', ?, ?, ?)",
-            id, event.assigneeId, "Task assigned to you", event.taskTitle, json.writeValueAsString(data),
+            id,
+            event.assigneeId,
+            "Task assigned to you",
+            event.taskTitle,
+            json.writeValueAsString(data),
         )
         log.info("Push (stub, no FCM configured) to user {}: task '{}' assigned", event.assigneeId, event.taskTitle)
         realtime.notifyUsers(
@@ -104,20 +108,24 @@ class NotificationService(
     }
 
     fun preferences(userId: UUID): NotificationPreferences =
-        jdbc.query(
-            "SELECT assignment, reminders, email_digest FROM notifications.preferences WHERE user_id = ?",
-            RowMapper<NotificationPreferences> { rs, _ ->
-                NotificationPreferences(rs.getBoolean("assignment"), rs.getBoolean("reminders"), rs.getBoolean("email_digest"))
-            },
-            userId,
-        ).firstOrNull() ?: NotificationPreferences()
+        jdbc
+            .query(
+                "SELECT assignment, reminders, email_digest FROM notifications.preferences WHERE user_id = ?",
+                RowMapper<NotificationPreferences> { rs, _ ->
+                    NotificationPreferences(rs.getBoolean("assignment"), rs.getBoolean("reminders"), rs.getBoolean("email_digest"))
+                },
+                userId,
+            ).firstOrNull() ?: NotificationPreferences()
 
     fun savePreferences(userId: UUID, preferences: NotificationPreferences): NotificationPreferences {
         jdbc.update(
             "INSERT INTO notifications.preferences (user_id, assignment, reminders, email_digest) VALUES (?, ?, ?, ?) " +
                 "ON CONFLICT (user_id) DO UPDATE SET assignment = EXCLUDED.assignment, reminders = EXCLUDED.reminders, " +
                 "email_digest = EXCLUDED.email_digest",
-            userId, preferences.assignment, preferences.reminders, preferences.emailDigest,
+            userId,
+            preferences.assignment,
+            preferences.reminders,
+            preferences.emailDigest,
         )
         return preferences(userId)
     }
@@ -127,17 +135,23 @@ class NotificationService(
 @RequestMapping("/api/v1/notifications")
 class NotificationController(private val notifications: NotificationService) {
     @GetMapping
-    fun list(@RequestParam(defaultValue = "false") unreadOnly: Boolean): List<NotificationDto> =
+    fun list(
+        @RequestParam(defaultValue = "false") unreadOnly: Boolean
+    ): List<NotificationDto> =
         notifications.list(CurrentUser.id(), unreadOnly)
 
     @PostMapping("/{id}/read")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    fun markRead(@PathVariable id: UUID) = notifications.markRead(CurrentUser.id(), id)
+    fun markRead(
+        @PathVariable id: UUID
+    ) = notifications.markRead(CurrentUser.id(), id)
 
     @GetMapping("/preferences")
     fun preferences(): NotificationPreferences = notifications.preferences(CurrentUser.id())
 
     @PutMapping("/preferences")
-    fun savePreferences(@RequestBody preferences: NotificationPreferences): NotificationPreferences =
+    fun savePreferences(
+        @RequestBody preferences: NotificationPreferences
+    ): NotificationPreferences =
         notifications.savePreferences(CurrentUser.id(), preferences)
 }

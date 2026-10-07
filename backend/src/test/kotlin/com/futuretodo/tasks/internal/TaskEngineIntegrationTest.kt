@@ -68,7 +68,8 @@ class TaskEngineIntegrationTest : IntegrationTestBase() {
         changes.apply(
             owner,
             IncomingChange(
-                "task", taskId,
+                "task",
+                taskId,
                 mapOf("title" to f("Older title", "005:00000:laptop"), "note" to f("A note", "005:00000:laptop")),
             ),
         )
@@ -99,7 +100,9 @@ class TaskEngineIntegrationTest : IntegrationTestBase() {
         val owner = UUID.randomUUID()
         val listId = createList(owner)
         val taskId = createTask(
-            owner, listId, "Water plants",
+            owner,
+            listId,
+            "Water plants",
             mapOf(
                 "dueDate" to f("2026-10-04", "001:00000:a"),
                 "repeatType" to f("DAILY", "001:00000:a"),
@@ -170,7 +173,11 @@ class TaskEngineIntegrationTest : IntegrationTestBase() {
     fun `full text search finds tasks by title note and step`() {
         val owner = UUID.randomUUID()
         val listId = createList(owner)
-        val marker = "zebra" + UUID.randomUUID().toString().take(6).filter { it.isLetter() }
+        val marker = "zebra" + UUID
+            .randomUUID()
+            .toString()
+            .take(6)
+            .filter { it.isLetter() }
         val byTitle = createTask(owner, listId, "Feed the $marker")
         val byNote = createTask(owner, listId, "Other", mapOf("note" to f("remember $marker", "001:00000:a")))
         val byStep = createTask(owner, listId, "Third")

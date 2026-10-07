@@ -52,7 +52,8 @@ class JwtService(
 
     fun issue(userId: UUID, role: String, sessionId: UUID): String {
         val now = Instant.now()
-        return Jwts.builder()
+        return Jwts
+            .builder()
             .subject(userId.toString())
             .claim("role", role)
             .claim("sid", sessionId.toString())
@@ -64,7 +65,12 @@ class JwtService(
 
     override fun verify(token: String): AuthUser? =
         try {
-            val claims = Jwts.parser().verifyWith(key).build().parseSignedClaims(token).payload
+            val claims = Jwts
+                .parser()
+                .verifyWith(key)
+                .build()
+                .parseSignedClaims(token)
+                .payload
             AuthUser(
                 UUID.fromString(claims.subject),
                 claims.get("role", String::class.java),
@@ -79,14 +85,22 @@ class JwtService(
 
 /** Bucket4j rate limiter for login and other sensitive endpoints. */
 @Component
-class LoginRateLimiter(@Value("\${app.rate-limit.attempts-per-minute:10}") private val perMinute: Long) {
+class LoginRateLimiter(
+    @Value("\${app.rate-limit.attempts-per-minute:10}") private val perMinute: Long
+) {
     private val buckets = ConcurrentHashMap<String, Bucket>()
 
     fun check(key: String) {
         val bucket = buckets.computeIfAbsent(key) {
-            Bucket.builder()
-                .addLimit(Bandwidth.builder().capacity(perMinute).refillIntervally(perMinute, Duration.ofMinutes(1)).build())
-                .build()
+            Bucket
+                .builder()
+                .addLimit(
+                    Bandwidth
+                        .builder()
+                        .capacity(perMinute)
+                        .refillIntervally(perMinute, Duration.ofMinutes(1))
+                        .build()
+                ).build()
         }
         if (!bucket.tryConsume(1)) {
             throw ApiException(HttpStatus.TOO_MANY_REQUESTS, "RATE_LIMITED", "Too many attempts, try again later")
@@ -114,7 +128,9 @@ class JwtAuthFilter(private val verifier: TokenVerifier) : OncePerRequestFilter(
 
 @Configuration
 @EnableWebSecurity
-class SecurityConfig(@Value("\${app.cors.allowed-origins:*}") private val origins: String) {
+class SecurityConfig(
+    @Value("\${app.cors.allowed-origins:*}") private val origins: String
+) {
     @Bean
     fun passwordEncoder(): PasswordEncoder = Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8()
 
@@ -126,20 +142,22 @@ class SecurityConfig(@Value("\${app.cors.allowed-origins:*}") private val origin
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
             .exceptionHandling { it.authenticationEntryPoint(HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)) }
             .authorizeHttpRequests {
-                it.requestMatchers(
-                    "/api/v1/auth/**",
-                    "/api/v1/ws",
-                    "/api/v1/ws/**",
-                    "/v3/api-docs/**",
-                    "/swagger-ui/**",
-                    "/swagger-ui.html",
-                    "/actuator/health/**",
-                    "/actuator/health",
-                ).permitAll()
-                    .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
-                    .anyRequest().authenticated()
-            }
-            .addFilterBefore(JwtAuthFilter(jwtService), UsernamePasswordAuthenticationFilter::class.java)
+                it
+                    .requestMatchers(
+                        "/api/v1/auth/**",
+                        "/api/v1/ws",
+                        "/api/v1/ws/**",
+                        "/v3/api-docs/**",
+                        "/swagger-ui/**",
+                        "/swagger-ui.html",
+                        "/actuator/health/**",
+                        "/actuator/health",
+                    ).permitAll()
+                    .requestMatchers("/api/v1/admin/**")
+                    .hasRole("ADMIN")
+                    .anyRequest()
+                    .authenticated()
+            }.addFilterBefore(JwtAuthFilter(jwtService), UsernamePasswordAuthenticationFilter::class.java)
         return http.build()
     }
 

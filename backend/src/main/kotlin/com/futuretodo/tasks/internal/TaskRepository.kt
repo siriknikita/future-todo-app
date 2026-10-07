@@ -85,9 +85,10 @@ class TaskRepository(private val jdbc: NamedParameterJdbcTemplate, private val j
 
     /** Returns the stored field clocks, or null when the row does not exist. Locks the row. */
     fun clocks(spec: EntitySpec, id: UUID): Map<String, String>? =
-        jdbc.query("SELECT clocks FROM ${spec.table} WHERE id = :id FOR UPDATE", mapOf("id" to id)) { rs, _ ->
-            clocksOf(rs.getString("clocks"))
-        }.firstOrNull()
+        jdbc
+            .query("SELECT clocks FROM ${spec.table} WHERE id = :id FOR UPDATE", mapOf("id" to id)) { rs, _ ->
+                clocksOf(rs.getString("clocks"))
+            }.firstOrNull()
 
     fun update(spec: EntitySpec, id: UUID, values: Map<String, Any?>, clocks: Map<String, String>) {
         val params = MapSqlParameterSource().addValue("id", id)
@@ -123,10 +124,18 @@ class TaskRepository(private val jdbc: NamedParameterJdbcTemplate, private val j
                 "repeat_days, assignee_id, position, clocks) VALUES (:id, :list, :title, :note, :important, :due, :reminder, " +
                 ":type, :interval, :days, :assignee, :position, :clocks)",
             MapSqlParameterSource()
-                .addValue("id", id).addValue("list", source.listId).addValue("title", source.title).addValue("note", source.note)
-                .addValue("important", source.important).addValue("due", dueDate).addValue("reminder", reminderAt)
-                .addValue("type", source.repeatType).addValue("interval", source.repeatInterval).addValue("days", source.repeatDays)
-                .addValue("assignee", source.assigneeId).addValue("position", source.position)
+                .addValue("id", id)
+                .addValue("list", source.listId)
+                .addValue("title", source.title)
+                .addValue("note", source.note)
+                .addValue("important", source.important)
+                .addValue("due", dueDate)
+                .addValue("reminder", reminderAt)
+                .addValue("type", source.repeatType)
+                .addValue("interval", source.repeatInterval)
+                .addValue("days", source.repeatDays)
+                .addValue("assignee", source.assigneeId)
+                .addValue("position", source.position)
                 .addValue("clocks", json.writeValueAsString(clocks)),
         )
     }
@@ -135,7 +144,10 @@ class TaskRepository(private val jdbc: NamedParameterJdbcTemplate, private val j
         jdbc.update(
             "INSERT INTO tasks.steps (id, task_id, title, position, clocks) VALUES (:id, :task, :title, :position, :clocks)",
             mapOf(
-                "id" to id, "task" to taskId, "title" to source.title, "position" to source.position,
+                "id" to id,
+                "task" to taskId,
+                "title" to source.title,
+                "position" to source.position,
                 "clocks" to json.writeValueAsString(clocks),
             ),
         )
@@ -156,7 +168,8 @@ class TaskRepository(private val jdbc: NamedParameterJdbcTemplate, private val j
     fun groupsOf(ownerId: UUID): List<GroupDto> =
         jdbc.query(
             "SELECT * FROM tasks.list_groups WHERE owner_id = :owner AND NOT deleted ORDER BY position, created_at",
-            mapOf("owner" to ownerId), groupMapper,
+            mapOf("owner" to ownerId),
+            groupMapper,
         )
 
     fun listsByIds(ids: Collection<UUID>): List<ListDto> {
@@ -165,40 +178,47 @@ class TaskRepository(private val jdbc: NamedParameterJdbcTemplate, private val j
         }
         return jdbc.query(
             "SELECT * FROM tasks.lists WHERE id IN (:ids) AND NOT deleted ORDER BY position, created_at",
-            mapOf("ids" to ids), listMapper,
+            mapOf("ids" to ids),
+            listMapper,
         )
     }
 
     fun listsInGroup(groupId: UUID, ownerId: UUID): List<ListDto> =
         jdbc.query(
             "SELECT * FROM tasks.lists WHERE group_id = :group AND owner_id = :owner AND NOT deleted",
-            mapOf("group" to groupId, "owner" to ownerId), listMapper,
+            mapOf("group" to groupId, "owner" to ownerId),
+            listMapper,
         )
 
     fun listIdOfTask(taskId: UUID): UUID? =
-        jdbc.query("SELECT list_id FROM tasks.tasks WHERE id = :id", mapOf("id" to taskId)) { rs, _ ->
-            rs.getObject("list_id", UUID::class.java)
-        }.firstOrNull()
+        jdbc
+            .query("SELECT list_id FROM tasks.tasks WHERE id = :id", mapOf("id" to taskId)) { rs, _ ->
+                rs.getObject("list_id", UUID::class.java)
+            }.firstOrNull()
 
     fun taskIdOfStep(stepId: UUID): UUID? =
-        jdbc.query("SELECT task_id FROM tasks.steps WHERE id = :id", mapOf("id" to stepId)) { rs, _ ->
-            rs.getObject("task_id", UUID::class.java)
-        }.firstOrNull()
+        jdbc
+            .query("SELECT task_id FROM tasks.steps WHERE id = :id", mapOf("id" to stepId)) { rs, _ ->
+                rs.getObject("task_id", UUID::class.java)
+            }.firstOrNull()
 
     fun stepsOfTask(taskId: UUID): List<StepDto> =
         jdbc.query(
             "SELECT * FROM tasks.steps WHERE task_id = :task AND NOT deleted ORDER BY position, created_at",
-            mapOf("task" to taskId), stepMapper,
+            mapOf("task" to taskId),
+            stepMapper,
         )
 
     fun withSteps(tasks: List<TaskDto>): List<TaskDto> {
         if (tasks.isEmpty()) {
             return tasks
         }
-        val steps = jdbc.query(
-            "SELECT * FROM tasks.steps WHERE task_id IN (:ids) AND NOT deleted ORDER BY position, created_at",
-            mapOf("ids" to tasks.map { it.id }), stepMapper,
-        ).groupBy { it.taskId }
+        val steps = jdbc
+            .query(
+                "SELECT * FROM tasks.steps WHERE task_id IN (:ids) AND NOT deleted ORDER BY position, created_at",
+                mapOf("ids" to tasks.map { it.id }),
+                stepMapper,
+            ).groupBy { it.taskId }
         return tasks.map { it.copy(steps = steps[it.id] ?: emptyList()) }
     }
 
@@ -214,7 +234,8 @@ class TaskRepository(private val jdbc: NamedParameterJdbcTemplate, private val j
         val completedFilter = if (showCompleted) "" else "AND NOT t.completed"
         return jdbc.query(
             "SELECT $TASK_COLS FROM tasks.tasks t WHERE t.list_id = :list AND NOT t.deleted $completedFilter ORDER BY $order",
-            mapOf("list" to listId), taskMapper,
+            mapOf("list" to listId),
+            taskMapper,
         )
     }
 
@@ -227,7 +248,8 @@ class TaskRepository(private val jdbc: NamedParameterJdbcTemplate, private val j
         return jdbc.query(
             "SELECT $TASK_COLS FROM tasks.tasks t JOIN tasks.lists l ON l.id = t.list_id " +
                 "WHERE t.list_id IN (:lists) AND NOT t.deleted AND NOT l.deleted AND ($condition) ORDER BY $order",
-            source, taskMapper,
+            source,
+            taskMapper,
         )
     }
 
@@ -244,7 +266,8 @@ class TaskRepository(private val jdbc: NamedParameterJdbcTemplate, private val j
                 "OR EXISTS (SELECT 1 FROM tasks.steps s WHERE s.task_id = t.id AND NOT s.deleted " +
                 "AND to_tsvector('simple', s.title) @@ to_tsquery('simple', :q))) " +
                 "ORDER BY t.created_at DESC LIMIT 100",
-            source, taskMapper,
+            source,
+            taskMapper,
         )
     }
 
@@ -257,12 +280,14 @@ class TaskRepository(private val jdbc: NamedParameterJdbcTemplate, private val j
         val tasks = jdbc.query(
             "SELECT $TASK_COLS FROM tasks.tasks t JOIN tasks.lists l ON l.id = t.list_id " +
                 "WHERE l.owner_id = :owner AND NOT l.deleted AND NOT t.deleted",
-            params, taskMapper,
+            params,
+            taskMapper,
         )
         val steps = jdbc.query(
             "SELECT s.* FROM tasks.steps s JOIN tasks.tasks t ON t.id = s.task_id JOIN tasks.lists l ON l.id = t.list_id " +
                 "WHERE l.owner_id = :owner AND NOT l.deleted AND NOT t.deleted AND NOT s.deleted",
-            params, stepMapper,
+            params,
+            stepMapper,
         )
         return mapOf("groups" to groups, "lists" to lists, "tasks" to tasks, "steps" to steps)
     }

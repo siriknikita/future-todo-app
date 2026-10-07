@@ -207,7 +207,8 @@ object RecurrenceCalculator {
         if (days.isNullOrBlank()) {
             return emptySet()
         }
-        return days.split(",")
+        return days
+            .split(",")
             .map { it.trim().uppercase() }
             .filter { it.length >= 3 }
             .mapNotNull { token -> DayOfWeek.values().firstOrNull { it.name.startsWith(token) } }
@@ -218,7 +219,8 @@ object RecurrenceCalculator {
 /** Builds the PostgreSQL tsquery for a user-typed search string: every word is a prefix match. */
 object SearchQuery {
     fun toTsQuery(text: String): String? {
-        val words = text.split(Regex("\\s+"))
+        val words = text
+            .split(Regex("\\s+"))
             .map { word -> word.filter { it.isLetterOrDigit() } }
             .filter { it.isNotEmpty() }
         if (words.isEmpty()) {

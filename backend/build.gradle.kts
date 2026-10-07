@@ -68,6 +68,19 @@ detekt {
     config.setFrom(files("config/detekt/detekt.yml"))
 }
 
+// Spring dependency management bumps Kotlin on every configuration; detekt only runs
+// with the Kotlin version it was compiled against.
+configurations.matching { it.name == "detekt" }.all {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "org.jetbrains.kotlin") {
+            useVersion(
+                io.gitlab.arturbosch.detekt
+                    .getSupportedKotlinVersion()
+            )
+        }
+    }
+}
+
 ktlint {
     version.set("1.3.1")
 }

@@ -25,7 +25,17 @@ class AuthServiceTest {
     private val service = AuthService(users, emailTokens, sessions, encoder, mail, limiter, oidc)
 
     private fun user(verified: Boolean = true, blocked: Boolean = false) = UserRecord(
-        UUID.randomUUID(), "a@b.com", "hash", "Alice", null, verified, "USER", blocked, "{}", OffsetDateTime.now(), null,
+        UUID.randomUUID(),
+        "a@b.com",
+        "hash",
+        "Alice",
+        null,
+        verified,
+        "USER",
+        blocked,
+        "{}",
+        OffsetDateTime.now(),
+        null,
     )
 
     @Test

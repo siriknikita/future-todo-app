@@ -45,7 +45,8 @@ class FutureTodoE2eTest : IntegrationTestBase() {
 
         val token = jdbc.queryForObject(
             "SELECT t.token FROM accounts.email_tokens t JOIN accounts.users u ON u.id = t.user_id WHERE u.email = ?",
-            String::class.java, email,
+            String::class.java,
+            email,
         )
         assertEquals(204, api.post("/auth/verify-email", body = mapOf("token" to token)).status)
         assertEquals(400, api.post("/auth/verify-email", body = mapOf("token" to token)).status)
@@ -83,7 +84,8 @@ class FutureTodoE2eTest : IntegrationTestBase() {
         val token = jdbc.queryForObject(
             "SELECT t.token FROM accounts.email_tokens t JOIN accounts.users u ON u.id = t.user_id " +
                 "WHERE u.email = ? AND t.kind = 'RESET'",
-            String::class.java, user.email,
+            String::class.java,
+            user.email,
         )
 
         assertEquals(204, api.post("/auth/reset-password", body = mapOf("token" to token, "newPassword" to "brand-new-password")).status)
@@ -216,13 +218,15 @@ class FutureTodoE2eTest : IntegrationTestBase() {
         fun field(value: Any?, hlc: String) = mapOf("value" to value, "hlc" to hlc)
 
         val push = api.post(
-            "/sync/push", owner.accessToken,
+            "/sync/push",
+            owner.accessToken,
             mapOf(
                 "deviceId" to "web-1",
                 "changes" to listOf(
                     mapOf("entityType" to "list", "entityId" to listId, "fields" to mapOf("name" to field("Offline", "100:00000:web-1"))),
                     mapOf(
-                        "entityType" to "task", "entityId" to taskId,
+                        "entityType" to "task",
+                        "entityId" to taskId,
                         "fields" to mapOf(
                             "listId" to field(listId, "100:00000:web-1"),
                             "title" to field("Made offline", "100:00000:web-1"),
@@ -236,25 +240,29 @@ class FutureTodoE2eTest : IntegrationTestBase() {
         val invitation = api.post("/lists/$listId/invitations", owner.accessToken).json()["token"].asText()
 
         val received = LinkedBlockingQueue<String>()
-        val socket = HttpClient.newHttpClient().newWebSocketBuilder().buildAsync(
-            URI.create("ws://localhost:$port/api/v1/ws?token=${guest.accessToken}"),
-            object : WebSocket.Listener {
-                override fun onOpen(webSocket: WebSocket) {
-                    webSocket.request(1)
-                }
+        val socket = HttpClient
+            .newHttpClient()
+            .newWebSocketBuilder()
+            .buildAsync(
+                URI.create("ws://localhost:$port/api/v1/ws?token=${guest.accessToken}"),
+                object : WebSocket.Listener {
+                    override fun onOpen(webSocket: WebSocket) {
+                        webSocket.request(1)
+                    }
 
-                override fun onText(webSocket: WebSocket, data: CharSequence, last: Boolean): CompletionStage<*>? {
-                    received.add(data.toString())
-                    webSocket.request(1)
-                    return null
-                }
-            },
-        ).join()
+                    override fun onText(webSocket: WebSocket, data: CharSequence, last: Boolean): CompletionStage<*>? {
+                        received.add(data.toString())
+                        webSocket.request(1)
+                        return null
+                    }
+                },
+            ).join()
         Thread.sleep(500)
 
         api.post("/invitations/$invitation/accept", guest.accessToken)
         api.post(
-            "/sync/push", owner.accessToken,
+            "/sync/push",
+            owner.accessToken,
             mapOf(
                 "changes" to listOf(
                     mapOf("entityType" to "task", "entityId" to taskId, "fields" to mapOf("important" to field(true, "200:00000:web-1"))),
@@ -278,7 +286,9 @@ class FutureTodoE2eTest : IntegrationTestBase() {
     @Test
     fun `websocket rejects connections without a valid token`() {
         val failed = try {
-            HttpClient.newHttpClient().newWebSocketBuilder()
+            HttpClient
+                .newHttpClient()
+                .newWebSocketBuilder()
                 .buildAsync(URI.create("ws://localhost:$port/api/v1/ws?token=bad"), object : WebSocket.Listener {})
                 .join()
             false
