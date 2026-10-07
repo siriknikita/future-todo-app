@@ -64,7 +64,7 @@ jobs:
         run: |
           # Sum LF (lines found) and LH (lines hit) from lcov.info, ignoring generated files.
           awk -v min="$COVERAGE_MIN" '
-            /^SF:/ { skip = ($0 ~ /\.g\.dart|\.freezed\.dart|\.gen\.dart|\/generated\//) }
+            /^SF:/ { skip = ($0 ~ /\.g\.dart|\.freezed\.dart|\.gen\.dart|\/generated\/|\/l10n\/app_localizations/) }
             /^LF:/ && !skip { lf += substr($0, 4) }
             /^LH:/ && !skip { lh += substr($0, 4) }
             END {
