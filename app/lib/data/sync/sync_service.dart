@@ -4,8 +4,8 @@ import 'dart:convert';
 import 'package:future_todo/core/hlc.dart';
 import 'package:future_todo/core/lww.dart';
 import 'package:future_todo/data/remote/remote_api.dart';
-import 'package:future_todo/data/sync_entities.dart';
 import 'package:future_todo/data/repository.dart';
+import 'package:future_todo/data/sync_entities.dart';
 
 /// Result of the last sync attempt; combined with the dirty count in the UI
 /// to show synced / pending / error (FR-8.4).

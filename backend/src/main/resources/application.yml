@@ -28,6 +28,10 @@ management:
     web:
       exposure:
         include: health
+  health:
+    # Emails are best-effort; an SMTP outage should not mark the API as down.
+    mail:
+      enabled: false
 
 springdoc:
   api-docs:

@@ -262,8 +262,17 @@ class AuthService(
         }
         val name = request.displayName?.trim().takeUnless { it.isNullOrEmpty() } ?: email.substringBefore("@")
         val user = UserRecord(
-            UUID.randomUUID(), email, encoder.encode(request.password), name, null, false, "USER", false, "{}",
-            OffsetDateTime.now(ZoneOffset.UTC), null,
+            UUID.randomUUID(),
+            email,
+            encoder.encode(request.password),
+            name,
+            null,
+            false,
+            "USER",
+            false,
+            "{}",
+            OffsetDateTime.now(ZoneOffset.UTC),
+            null,
         )
         users.insert(user)
         sendVerification(user)
@@ -341,8 +350,17 @@ class AuthService(
                 users.linkOAuth(user.id, provider, identity.subject)
             } else {
                 val created = UserRecord(
-                    UUID.randomUUID(), email, null, identity.name ?: email.substringBefore("@"), null, true, "USER", false, "{}",
-                    OffsetDateTime.now(ZoneOffset.UTC), null,
+                    UUID.randomUUID(),
+                    email,
+                    null,
+                    identity.name ?: email.substringBefore("@"),
+                    null,
+                    true,
+                    "USER",
+                    false,
+                    "{}",
+                    OffsetDateTime.now(ZoneOffset.UTC),
+                    null,
                 )
                 users.insert(created, provider, identity.subject)
                 user = created
@@ -503,8 +521,17 @@ class AdminBootstrap(
         }
         users.insert(
             UserRecord(
-                UUID.randomUUID(), email.lowercase(), encoder.encode(password), "Administrator", null, true, "ADMIN", false, "{}",
-                OffsetDateTime.now(ZoneOffset.UTC), null,
+                UUID.randomUUID(),
+                email.lowercase(),
+                encoder.encode(password),
+                "Administrator",
+                null,
+                true,
+                "ADMIN",
+                false,
+                "{}",
+                OffsetDateTime.now(ZoneOffset.UTC),
+                null,
             ),
         )
     }

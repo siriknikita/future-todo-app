@@ -30,7 +30,7 @@ class SyncEntity {
   /// keep its old value.
   final Future<void> Function(Map<String, Object?> json) upsertRow;
 
-  /// Clears the dirty flag only if the row still has the pushed [clocks].
+  /// Clears the dirty flag only if the row still has the pushed `clocks`.
   final Future<void> Function(String id, String clocks) markClean;
 }
 

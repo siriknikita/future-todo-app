@@ -1,7 +1,10 @@
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show immutable;
+
 /// Hybrid logical clock timestamp: physical time + counter + node id.
 /// The string form sorts lexicographically in the same order as [compareTo].
+@immutable
 class Hlc implements Comparable<Hlc> {
   const Hlc(this.millis, this.counter, this.node);
 
@@ -19,8 +22,7 @@ class Hlc implements Comparable<Hlc> {
   final String node;
 
   @override
-  String toString() =>
-      '${millis.toString().padLeft(15, '0')}:'
+  String toString() => '${millis.toString().padLeft(15, '0')}:'
       '${counter.toString().padLeft(5, '0')}:$node';
 
   @override
@@ -75,7 +77,6 @@ class HlcClock {
     } else {
       counter = 0;
     }
-    _last = Hlc(maxMillis, counter, node);
-    return _last;
+    return _last = Hlc(maxMillis, counter, node);
   }
 }

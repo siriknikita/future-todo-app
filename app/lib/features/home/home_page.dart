@@ -23,9 +23,13 @@ class HomePage extends ConsumerWidget {
         if (width < 700) {
           return Scaffold(
             appBar: AppBar(title: Text(l.appTitle)),
-            drawer: Drawer(child: Sidebar(onSelected: () {
-              Navigator.of(context).maybePop();
-            })),
+            drawer: Drawer(
+              child: Sidebar(
+                onSelected: () {
+                  Navigator.of(context).maybePop();
+                },
+              ),
+            ),
             body: const TaskArea(),
           );
         }

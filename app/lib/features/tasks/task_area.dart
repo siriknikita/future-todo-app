@@ -60,7 +60,8 @@ class TaskArea extends ConsumerWidget {
     final sorted = sortTasks(visible, settings.sortMode);
     final open = sorted.where((t) => !t.isCompleted).toList();
     final done = sorted.where((t) => t.isCompleted).toList();
-    final showDone = !settings.hideCompleted && view.smart != SmartList.completed;
+    final showDone =
+        !settings.hideCompleted && view.smart != SmartList.completed;
 
     Widget tile(Task t) => TaskTile(
           task: t,
@@ -152,8 +153,9 @@ class TaskArea extends ConsumerWidget {
                 ),
                 IconButton(
                   key: const Key('toggle-completed'),
-                  tooltip:
-                      settings.hideCompleted ? l.showCompleted : l.hideCompleted,
+                  tooltip: settings.hideCompleted
+                      ? l.showCompleted
+                      : l.hideCompleted,
                   icon: Icon(
                     settings.hideCompleted
                         ? Icons.visibility_off_outlined

@@ -38,7 +38,8 @@ class HttpRemoteApi implements RemoteApi {
       request.headers['Authorization'] = 'Bearer $accessToken';
     }
     if (body != null) request.body = jsonEncode(body);
-    final response = await http.Response.fromStream(await _client.send(request));
+    final response =
+        await http.Response.fromStream(await _client.send(request));
 
     if (response.statusCode == 401 && auth && retry && refreshToken != null) {
       if (await _refresh()) {
@@ -63,12 +64,12 @@ class HttpRemoteApi implements RemoteApi {
 
   Future<bool> _refresh() async {
     try {
-      final j = await _send(
+      final j = (await _send(
         'POST',
         '/auth/refresh',
         body: {'refreshToken': refreshToken},
         auth: false,
-      ) as Map<String, dynamic>;
+      ))! as Map<String, dynamic>;
       accessToken = j['accessToken'] as String;
       refreshToken = j['refreshToken'] as String;
       onTokens?.call(accessToken!, refreshToken!);
@@ -110,7 +111,7 @@ class HttpRemoteApi implements RemoteApi {
     required String email,
     required String password,
   }) async {
-    final j = await _send(
+    final j = (await _send(
       'POST',
       '/auth/login',
       auth: false,
@@ -120,7 +121,7 @@ class HttpRemoteApi implements RemoteApi {
         'deviceName': 'Web',
         'platform': 'web',
       },
-    ) as Map<String, dynamic>;
+    ))! as Map<String, dynamic>;
     return AuthSession(
       accessToken: j['accessToken'] as String,
       refreshToken: j['refreshToken'] as String,
@@ -150,7 +151,7 @@ class HttpRemoteApi implements RemoteApi {
 
   @override
   Future<AuthUser> updateProfile({String? name}) async => _user(
-        await _send('PATCH', '/me', body: {'displayName': name})
+        (await _send('PATCH', '/me', body: {'displayName': name}))!
             as Map<String, dynamic>,
       );
 
@@ -191,7 +192,7 @@ class HttpRemoteApi implements RemoteApi {
 
   @override
   Future<PullResult> pull(int cursor) async {
-    final j = await _send('GET', '/sync/pull?since=$cursor')
+    final j = (await _send('GET', '/sync/pull?since=$cursor'))!
         as Map<String, dynamic>;
     final raw = (j['changes'] as List<dynamic>? ?? const [])
         .cast<Map<String, dynamic>>();
@@ -208,7 +209,7 @@ class HttpRemoteApi implements RemoteApi {
 
   @override
   Future<String> createInvitation(String listId) async {
-    final j = await _send('POST', '/lists/$listId/invitations')
+    final j = (await _send('POST', '/lists/$listId/invitations'))!
         as Map<String, dynamic>;
     return j['token'] as String;
   }
@@ -219,9 +220,9 @@ class HttpRemoteApi implements RemoteApi {
 
   @override
   Future<List<ListMember>> listMembers(String listId) async {
-    final raw = (await _send('GET', '/lists/$listId/members')
-            as List<dynamic>)
-        .cast<Map<String, dynamic>>();
+    final raw =
+        ((await _send('GET', '/lists/$listId/members'))! as List<dynamic>)
+            .cast<Map<String, dynamic>>();
     return [
       for (final m in raw)
         ListMember(

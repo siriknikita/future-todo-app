@@ -71,7 +71,11 @@ class SyncIntegrationTest : IntegrationTestBase() {
         sync.push(user, PushRequest("dev2", listOf(change("task", taskId, "300:00000:dev2", "title" to "From dev2", "important" to true))))
         sync.push(user, PushRequest("dev1", listOf(change("task", taskId, "200:00000:dev1", "title" to "From dev1", "note" to "n1"))))
 
-        val last = sync.pull(user, 0, 500).changes.last { it.entityId == taskId }.payload
+        val last = sync
+            .pull(user, 0, 500)
+            .changes
+            .last { it.entityId == taskId }
+            .payload
         assertEquals("From dev2", last["title"].asText())
         assertTrue(last["important"].asBoolean())
         assertEquals("n1", last["note"].asText())

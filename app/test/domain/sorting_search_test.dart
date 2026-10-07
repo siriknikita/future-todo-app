@@ -6,7 +6,12 @@ import '../helpers/factories.dart';
 
 void main() {
   final tasks = [
-    makeTask(id: 'b', title: 'banana', createdAt: DateTime(2025, 1, 2), position: 2),
+    makeTask(
+      id: 'b',
+      title: 'banana',
+      createdAt: DateTime(2025, 1, 2),
+      position: 2,
+    ),
     makeTask(
       id: 'a',
       title: 'Apple',
@@ -19,14 +24,17 @@ void main() {
       id: 'c',
       title: 'cherry',
       dueDate: '2025-02-01',
-      createdAt: DateTime(2025, 1, 1),
+      createdAt: DateTime(2025),
       position: 1,
     ),
   ];
 
   List<String> ids(SortMode m) => sortTasks(tasks, m).map((t) => t.id).toList();
 
-  test('manual sorts by position', () => expect(ids(SortMode.manual), ['c', 'b', 'a']));
+  test(
+    'manual sorts by position',
+    () => expect(ids(SortMode.manual), ['c', 'b', 'a']),
+  );
   test('importance puts important first', () {
     expect(ids(SortMode.importance).first, 'a');
   });

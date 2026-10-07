@@ -22,6 +22,9 @@ permissions:
 
 env:
   COVERAGE_MIN: "80"
+  # Pinned so a new Flutter release cannot change lints or behavior under us.
+  # Keep in sync with app/Dockerfile and CLAUDE.md.
+  FLUTTER_VERSION: "3.38.5"
 
 defaults:
   run:
@@ -36,10 +39,11 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get
       - name: Generate code (build_runner)
-        run: dart run build_runner build --delete-conflicting-outputs
+        run: dart run build_runner build --delete-conflicting-outputs --force-jit
       - name: Format check
         run: dart format --output=none --set-exit-if-changed lib test
       - name: Analyze
@@ -53,9 +57,10 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get
-      - run: dart run build_runner build --delete-conflicting-outputs
+      - run: dart run build_runner build --delete-conflicting-outputs --force-jit
       - name: Install system SQLite (Drift tests use NativeDatabase.memory())
         run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
       - name: Unit and widget tests (flutter_test)
@@ -64,7 +69,7 @@ jobs:
         run: |
           # Sum LF (lines found) and LH (lines hit) from lcov.info, ignoring generated files.
           awk -v min="$COVERAGE_MIN" '
-            /^SF:/ { skip = ($0 ~ /\.g\.dart|\.freezed\.dart|\.gen\.dart|\/generated\//) }
+            /^SF:/ { skip = ($0 ~ /\.g\.dart|\.freezed\.dart|\.gen\.dart|\/generated\/|\/l10n\/app_localizations/) }
             /^LF:/ && !skip { lf += substr($0, 4) }
             /^LH:/ && !skip { lh += substr($0, 4) }
             END {
@@ -88,9 +93,10 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get
-      - run: dart run build_runner build --delete-conflicting-outputs
+      - run: dart run build_runner build --delete-conflicting-outputs --force-jit
       - name: Prepare web platform (not committed yet)
         run: |
           # Keep the committed web files, generate the rest, fetch Drift web assets.
@@ -119,9 +125,10 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get
-      - run: dart run build_runner build --delete-conflicting-outputs
+      - run: dart run build_runner build --delete-conflicting-outputs --force-jit
       - name: Prepare web platform (not committed yet)
         run: |
           # Keep the committed web files, generate the rest, fetch Drift web assets.

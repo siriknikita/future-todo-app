@@ -54,12 +54,14 @@ Config (env vars): `DB_URL`/`DB_USER`/`DB_PASSWORD` (defaults match `docker-comp
 
 ### App (`app/`, run from that directory)
 
+Use Flutter **3.38.5**, the version pinned in `.github/workflows/app.yml` and `app/Dockerfile` (newer releases add lints and deprecations that fail `flutter analyze --fatal-infos`). Bump all three together.
+
 Only `web/index.html` and `web/manifest.json` are committed. Before the first run: `flutter create . --platforms web` (keep the committed web files; delete the generated `test/widget_test.dart`) and put `sqlite3.wasm` and `drift_worker.js` into `web/` (CI and the Dockerfile do this automatically). Drift tests use an in-memory SQLite and need system `libsqlite3` (`apt install libsqlite3-dev`).
 
 | Task | Command |
 |---|---|
 | Install deps | `flutter pub get` |
-| Generate code (Drift) | `dart run build_runner build --delete-conflicting-outputs` |
+| Generate code (Drift) | `dart run build_runner build --delete-conflicting-outputs --force-jit` |
 | Lint | `dart format --set-exit-if-changed lib test` and `flutter analyze --fatal-infos` |
 | Unit + widget tests with coverage | `flutter test --coverage` (report in `coverage/lcov.info`; CI requires >= 80%) |
 | Single test file / test by name | `flutter test test/core/hlc_test.dart` / `flutter test --plain-name "some name"` |

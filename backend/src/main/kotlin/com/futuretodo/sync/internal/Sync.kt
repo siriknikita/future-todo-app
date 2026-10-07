@@ -70,8 +70,13 @@ class ChangeLogRepository(private val jdbc: NamedParameterJdbcTemplate, private 
         jdbc.queryForObject(
             "INSERT INTO sync.changes (entity_type, entity_id, list_id, actor_id, deleted, payload) " +
                 "VALUES (:type, :id, :list, :actor, :deleted, :payload) RETURNING seq",
-            MapSqlParameterSource().addValue("type", entityType).addValue("id", entityId).addValue("list", listId)
-                .addValue("actor", actorId).addValue("deleted", deleted).addValue("payload", payload),
+            MapSqlParameterSource()
+                .addValue("type", entityType)
+                .addValue("id", entityId)
+                .addValue("list", listId)
+                .addValue("actor", actorId)
+                .addValue("deleted", deleted)
+                .addValue("payload", payload),
             Long::class.javaObjectType,
         ) ?: 0L
 
@@ -185,7 +190,11 @@ class TokenHandshakeInterceptor(private val verifier: TokenVerifier) : Handshake
         wsHandler: WebSocketHandler,
         attributes: MutableMap<String, Any>,
     ): Boolean {
-        val token = UriComponentsBuilder.fromUri(request.uri).build().queryParams.getFirst("token") ?: return false
+        val token = UriComponentsBuilder
+            .fromUri(request.uri)
+            .build()
+            .queryParams
+            .getFirst("token") ?: return false
         val user = verifier.verify(token) ?: return false
         attributes["userId"] = user.id
         return true
@@ -205,7 +214,8 @@ class TokenHandshakeInterceptor(private val verifier: TokenVerifier) : Handshake
 @EnableWebSocket
 class WebSocketConfig(private val hub: RealtimeHub, private val verifier: TokenVerifier) : WebSocketConfigurer {
     override fun registerWebSocketHandlers(registry: WebSocketHandlerRegistry) {
-        registry.addHandler(hub, "/api/v1/ws")
+        registry
+            .addHandler(hub, "/api/v1/ws")
             .addInterceptors(TokenHandshakeInterceptor(verifier))
             .setAllowedOriginPatterns("*")
     }
@@ -223,7 +233,12 @@ class ChangeRecorder(
     @EventListener
     fun onEntityChanged(event: EntityChanged) {
         val seq = repo.append(
-            event.entityType, event.entityId, event.listId, event.actorId, event.deleted, json.writeValueAsString(event.payload),
+            event.entityType,
+            event.entityId,
+            event.listId,
+            event.actorId,
+            event.deleted,
+            json.writeValueAsString(event.payload),
         )
         val audience = if (event.listId != null) access.memberIds(event.listId) else setOf(event.actorId)
         hub.sendAfterCommit(audience, changesMessage(seq))
@@ -302,9 +317,14 @@ class SyncService(
 @RequestMapping("/api/v1/sync")
 class SyncController(private val sync: SyncService) {
     @PostMapping("/push")
-    fun push(@RequestBody request: PushRequest): PushResult = sync.push(CurrentUser.id(), request)
+    fun push(
+        @RequestBody request: PushRequest
+    ): PushResult = sync.push(CurrentUser.id(), request)
 
     @GetMapping("/pull")
-    fun pull(@RequestParam(defaultValue = "0") since: Long, @RequestParam(defaultValue = "500") limit: Int): PullResult =
+    fun pull(
+        @RequestParam(defaultValue = "0") since: Long,
+        @RequestParam(defaultValue = "500") limit: Int
+    ): PullResult =
         sync.pull(CurrentUser.id(), since, limit)
 }

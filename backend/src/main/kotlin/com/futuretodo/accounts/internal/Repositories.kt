@@ -60,8 +60,15 @@ class UserRepository(private val jdbc: JdbcTemplate) {
         jdbc.update(
             "INSERT INTO accounts.users (id, email, password_hash, display_name, photo_url, email_verified, role, " +
                 "oauth_provider, oauth_subject) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            user.id, user.email, user.passwordHash, user.displayName, user.photoUrl, user.emailVerified, user.role,
-            oauthProvider, oauthSubject,
+            user.id,
+            user.email,
+            user.passwordHash,
+            user.displayName,
+            user.photoUrl,
+            user.emailVerified,
+            user.role,
+            oauthProvider,
+            oauthSubject,
         )
     }
 
@@ -72,13 +79,16 @@ class UserRepository(private val jdbc: JdbcTemplate) {
         jdbc.query("SELECT * FROM accounts.users WHERE email = ?", mapper, email).firstOrNull()
 
     fun findByOAuth(provider: String, subject: String): UserRecord? =
-        jdbc.query("SELECT * FROM accounts.users WHERE oauth_provider = ? AND oauth_subject = ?", mapper, provider, subject)
+        jdbc
+            .query("SELECT * FROM accounts.users WHERE oauth_provider = ? AND oauth_subject = ?", mapper, provider, subject)
             .firstOrNull()
 
     fun linkOAuth(id: UUID, provider: String, subject: String) {
         jdbc.update(
             "UPDATE accounts.users SET oauth_provider = ?, oauth_subject = ?, email_verified = true WHERE id = ?",
-            provider, subject, id,
+            provider,
+            subject,
+            id,
         )
     }
 
@@ -115,7 +125,11 @@ class UserRepository(private val jdbc: JdbcTemplate) {
         return jdbc.query(
             "SELECT * FROM accounts.users WHERE lower(email) LIKE ? OR lower(display_name) LIKE ? " +
                 "ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            mapper, like, like, limit, offset,
+            mapper,
+            like,
+            like,
+            limit,
+            offset,
         )
     }
 
@@ -123,7 +137,9 @@ class UserRepository(private val jdbc: JdbcTemplate) {
         val like = "%" + (query ?: "").lowercase() + "%"
         return jdbc.queryForObject(
             "SELECT count(*) FROM accounts.users WHERE lower(email) LIKE ? OR lower(display_name) LIKE ?",
-            Long::class.javaObjectType, like, like,
+            Long::class.javaObjectType,
+            like,
+            like,
         ) ?: 0L
     }
 
@@ -135,7 +151,8 @@ class UserRepository(private val jdbc: JdbcTemplate) {
     fun countActiveSince(since: OffsetDateTime): Long =
         jdbc.queryForObject(
             "SELECT count(*) FROM accounts.users WHERE last_seen_at >= ?",
-            Long::class.javaObjectType, since,
+            Long::class.javaObjectType,
+            since,
         ) ?: 0L
 
     fun displayNames(ids: Collection<UUID>): Map<UUID, String> {
@@ -169,7 +186,12 @@ class SessionRepository(private val jdbc: JdbcTemplate) {
     fun insert(id: UUID, userId: UUID, tokenHash: String, deviceName: String?, platform: String?, expiresAt: OffsetDateTime) {
         jdbc.update(
             "INSERT INTO accounts.sessions (id, user_id, token_hash, device_name, platform, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
-            id, userId, tokenHash, deviceName, platform, expiresAt,
+            id,
+            userId,
+            tokenHash,
+            deviceName,
+            platform,
+            expiresAt,
         )
     }
 
@@ -179,7 +201,9 @@ class SessionRepository(private val jdbc: JdbcTemplate) {
     fun rotate(id: UUID, newHash: String, expiresAt: OffsetDateTime) {
         jdbc.update(
             "UPDATE accounts.sessions SET token_hash = ?, expires_at = ?, last_used_at = now() WHERE id = ?",
-            newHash, expiresAt, id,
+            newHash,
+            expiresAt,
+            id,
         )
     }
 
@@ -220,7 +244,10 @@ class EmailTokenRepository(private val jdbc: JdbcTemplate) {
     fun insert(token: String, userId: UUID, kind: String, expiresAt: OffsetDateTime) {
         jdbc.update(
             "INSERT INTO accounts.email_tokens (token, user_id, kind, expires_at) VALUES (?, ?, ?, ?)",
-            token, userId, kind, expiresAt,
+            token,
+            userId,
+            kind,
+            expiresAt,
         )
     }
 

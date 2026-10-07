@@ -21,37 +21,59 @@ import java.util.UUID
 class AuthController(private val auth: AuthService) {
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
-    fun register(@RequestBody request: RegisterRequest, http: HttpServletRequest): UserProfile =
+    fun register(
+        @RequestBody request: RegisterRequest,
+        http: HttpServletRequest
+    ): UserProfile =
         auth.register(request, http.remoteAddr)
 
     @PostMapping("/verify-email")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    fun verifyEmail(@RequestBody request: TokenRequest) = auth.verifyEmail(request.token)
+    fun verifyEmail(
+        @RequestBody request: TokenRequest
+    ) = auth.verifyEmail(request.token)
 
     @PostMapping("/resend-verification")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    fun resend(@RequestBody request: EmailRequest) = auth.resendVerification(request.email)
+    fun resend(
+        @RequestBody request: EmailRequest
+    ) = auth.resendVerification(request.email)
 
     @PostMapping("/login")
-    fun login(@RequestBody request: LoginRequest, http: HttpServletRequest): TokenPair = auth.login(request, http.remoteAddr)
+    fun login(
+        @RequestBody request: LoginRequest,
+        http: HttpServletRequest
+    ): TokenPair = auth.login(request, http.remoteAddr)
 
     @PostMapping("/refresh")
-    fun refresh(@RequestBody request: RefreshRequest): TokenPair = auth.refresh(request.refreshToken)
+    fun refresh(
+        @RequestBody request: RefreshRequest
+    ): TokenPair = auth.refresh(request.refreshToken)
 
     @PostMapping("/logout")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    fun logout(@RequestBody request: RefreshRequest) = auth.logout(request.refreshToken)
+    fun logout(
+        @RequestBody request: RefreshRequest
+    ) = auth.logout(request.refreshToken)
 
     @PostMapping("/forgot-password")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    fun forgot(@RequestBody request: EmailRequest, http: HttpServletRequest) = auth.forgotPassword(request.email, http.remoteAddr)
+    fun forgot(
+        @RequestBody request: EmailRequest,
+        http: HttpServletRequest
+    ) = auth.forgotPassword(request.email, http.remoteAddr)
 
     @PostMapping("/reset-password")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    fun reset(@RequestBody request: ResetPasswordRequest) = auth.resetPassword(request.token, request.newPassword)
+    fun reset(
+        @RequestBody request: ResetPasswordRequest
+    ) = auth.resetPassword(request.token, request.newPassword)
 
     @PostMapping("/oauth/{provider}")
-    fun oauth(@PathVariable provider: String, @RequestBody request: OAuthRequest): TokenPair = auth.oauthLogin(provider, request)
+    fun oauth(
+        @PathVariable provider: String,
+        @RequestBody request: OAuthRequest
+    ): TokenPair = auth.oauthLogin(provider, request)
 }
 
 @RestController
@@ -61,7 +83,9 @@ class MeController(private val accounts: AccountService, private val sessions: S
     fun me(): UserProfile = accounts.profile(CurrentUser.id())
 
     @PatchMapping
-    fun update(@RequestBody request: UpdateProfileRequest): UserProfile = accounts.updateProfile(CurrentUser.id(), request)
+    fun update(
+        @RequestBody request: UpdateProfileRequest
+    ): UserProfile = accounts.updateProfile(CurrentUser.id(), request)
 
     @DeleteMapping
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -69,13 +93,17 @@ class MeController(private val accounts: AccountService, private val sessions: S
 
     @PostMapping("/password")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    fun changePassword(@RequestBody request: ChangePasswordRequest) = accounts.changePassword(CurrentUser.id(), request)
+    fun changePassword(
+        @RequestBody request: ChangePasswordRequest
+    ) = accounts.changePassword(CurrentUser.id(), request)
 
     @GetMapping("/settings")
     fun settings(): Map<String, Any?> = accounts.settings(CurrentUser.id())
 
     @PutMapping("/settings")
-    fun putSettings(@RequestBody settings: Map<String, Any?>): Map<String, Any?> = accounts.putSettings(CurrentUser.id(), settings)
+    fun putSettings(
+        @RequestBody settings: Map<String, Any?>
+    ): Map<String, Any?> = accounts.putSettings(CurrentUser.id(), settings)
 
     @GetMapping("/sessions")
     fun listSessions(): List<SessionDto> {
@@ -89,7 +117,9 @@ class MeController(private val accounts: AccountService, private val sessions: S
 
     @DeleteMapping("/sessions/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    fun end(@PathVariable id: UUID) = sessions.end(CurrentUser.id(), id)
+    fun end(
+        @PathVariable id: UUID
+    ) = sessions.end(CurrentUser.id(), id)
 
     @GetMapping("/export")
     fun export(): Map<String, Any?> = accounts.export(CurrentUser.id())
@@ -107,11 +137,15 @@ class AdminController(private val accounts: AccountService) {
 
     @PostMapping("/users/{id}/block")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    fun block(@PathVariable id: UUID) = accounts.setBlocked(id, true)
+    fun block(
+        @PathVariable id: UUID
+    ) = accounts.setBlocked(id, true)
 
     @PostMapping("/users/{id}/unblock")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    fun unblock(@PathVariable id: UUID) = accounts.setBlocked(id, false)
+    fun unblock(
+        @PathVariable id: UUID
+    ) = accounts.setBlocked(id, false)
 
     @GetMapping("/stats")
     fun stats(): AdminStats = accounts.stats()

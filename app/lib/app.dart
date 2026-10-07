@@ -63,9 +63,8 @@ class _FutureTodoAppState extends ConsumerState<FutureTodoApp> {
       theme: _theme(Brightness.light),
       darkTheme: _theme(Brightness.dark),
       themeMode: settings.themeMode,
-      locale: settings.languageCode == null
-          ? null
-          : Locale(settings.languageCode!),
+      locale:
+          settings.languageCode == null ? null : Locale(settings.languageCode!),
       supportedLocales: AppLocalizations.supportedLocales,
       localizationsDelegates: const [
         AppLocalizations.delegate,
