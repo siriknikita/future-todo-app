@@ -98,8 +98,8 @@ void main() {
     test('groupPlanned sorts inside buckets and skips undated tasks', () {
       final grouped = groupPlanned(
         [
-          makeTask(id: 'b', dueDate: '2025-01-10'),
-          makeTask(id: 'a', dueDate: '2025-01-09'),
+          makeTask(id: 'b', dueDate: '2025-01-11'),
+          makeTask(id: 'a', dueDate: '2025-01-10'),
           makeTask(id: 'x'),
         ],
         now,
