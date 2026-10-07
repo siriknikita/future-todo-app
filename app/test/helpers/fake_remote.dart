@@ -13,6 +13,7 @@ class FakeRemoteApi implements RemoteApi {
   final Map<String, List<ListMember>> members = {};
   final List<String> calls = [];
   String? loginEmail;
+  bool failRemoveMember = false;
 
   /// Lists returned as `accessibleListIds`; null means "not reported".
   List<String>? accessible;
@@ -132,8 +133,12 @@ class FakeRemoteApi implements RemoteApi {
       members[listId] ?? const [];
 
   @override
-  Future<void> removeMember(String listId, String userId) async =>
-      calls.add('remove:$userId');
+  Future<void> removeMember(String listId, String userId) async {
+    if (failRemoveMember) {
+      throw const ApiException('Not allowed', statusCode: 403);
+    }
+    calls.add('remove:$userId');
+  }
 
   @override
   Future<void> joinByInvite(String token) async => calls.add('join:$token');
