@@ -24,6 +24,10 @@ class SyncEntity {
   final Map<String, Object?> defaults;
   final Future<List<Map<String, Object?>>> Function() dirtyRows;
   final Future<Map<String, Object?>?> Function(String id) findRow;
+
+  /// Writes the whole row. Goes through `toCompanion(false)` because Drift
+  /// drops null fields from a data-class upsert, so a cleared field would
+  /// keep its old value.
   final Future<void> Function(Map<String, Object?> json) upsertRow;
 
   /// Clears the dirty flag only if the row still has the pushed [clocks].
@@ -46,9 +50,9 @@ class SyncEntities {
                       ..where((t) => t.id.equals(id)))
                     .getSingleOrNull())
                 ?.toJson(),
-            upsertRow: (json) => db
-                .into(db.listGroups)
-                .insertOnConflictUpdate(ListGroup.fromJson(_normalize(json))),
+            upsertRow: (json) => db.into(db.listGroups).insertOnConflictUpdate(
+                  ListGroup.fromJson(_normalize(json)).toCompanion(false),
+                ),
             markClean: (id, clocks) => (db.update(db.listGroups)
                   ..where((t) => t.id.equals(id) & t.clocks.equals(clocks)))
                 .write(const ListGroupsCompanion(dirty: Value(false))),
@@ -74,9 +78,9 @@ class SyncEntities {
                       ..where((t) => t.id.equals(id)))
                     .getSingleOrNull())
                 ?.toJson(),
-            upsertRow: (json) => db
-                .into(db.taskLists)
-                .insertOnConflictUpdate(TaskList.fromJson(_normalize(json))),
+            upsertRow: (json) => db.into(db.taskLists).insertOnConflictUpdate(
+                  TaskList.fromJson(_normalize(json)).toCompanion(false),
+                ),
             markClean: (id, clocks) => (db.update(db.taskLists)
                   ..where((t) => t.id.equals(id) & t.clocks.equals(clocks)))
                 .write(const TaskListsCompanion(dirty: Value(false))),
@@ -111,9 +115,9 @@ class SyncEntities {
                       ..where((t) => t.id.equals(id)))
                     .getSingleOrNull())
                 ?.toJson(),
-            upsertRow: (json) => db
-                .into(db.tasks)
-                .insertOnConflictUpdate(Task.fromJson(_normalize(json))),
+            upsertRow: (json) => db.into(db.tasks).insertOnConflictUpdate(
+                  Task.fromJson(_normalize(json)).toCompanion(false),
+                ),
             markClean: (id, clocks) => (db.update(db.tasks)
                   ..where((t) => t.id.equals(id) & t.clocks.equals(clocks)))
                 .write(const TasksCompanion(dirty: Value(false))),
@@ -137,9 +141,9 @@ class SyncEntities {
                       ..where((t) => t.id.equals(id)))
                     .getSingleOrNull())
                 ?.toJson(),
-            upsertRow: (json) => db
-                .into(db.taskSteps)
-                .insertOnConflictUpdate(TaskStep.fromJson(_normalize(json))),
+            upsertRow: (json) => db.into(db.taskSteps).insertOnConflictUpdate(
+                  TaskStep.fromJson(_normalize(json)).toCompanion(false),
+                ),
             markClean: (id, clocks) => (db.update(db.taskSteps)
                   ..where((t) => t.id.equals(id) & t.clocks.equals(clocks)))
                 .write(const TaskStepsCompanion(dirty: Value(false))),
