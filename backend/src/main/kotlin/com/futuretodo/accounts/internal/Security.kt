@@ -152,6 +152,9 @@ class SecurityConfig(
                         "/swagger-ui.html",
                         "/actuator/health/**",
                         "/actuator/health",
+                        // Error dispatches carry no JWT (the filter runs once per request), so a 403
+                        // forwarded to /error would otherwise turn into a 401.
+                        "/error",
                     ).permitAll()
                     .requestMatchers("/api/v1/admin/**")
                     .hasRole("ADMIN")
