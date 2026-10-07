@@ -65,7 +65,19 @@ void main() {
     await submitText(tester, find.byKey(const Key('quick-add')), 'Star me');
     await submitText(tester, find.byKey(const Key('quick-add')), 'Plain');
 
-    await tester.tap(find.byIcon(Icons.star_border).first);
+    // The sidebar's Important entry uses the same icon, so scope to the tile.
+    final starMeTile = find.ancestor(
+      of: find.text('Star me'),
+      matching: find.byWidgetPredicate(
+        (w) =>
+            w.key is ValueKey<String> &&
+            RegExp(r'^task-[0-9a-f-]{36}$')
+                .hasMatch((w.key! as ValueKey<String>).value),
+      ),
+    );
+    await tester.tap(
+      find.descendant(of: starMeTile, matching: find.byIcon(Icons.star_border)),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('smart-important')));
