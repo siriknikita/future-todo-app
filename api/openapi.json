@@ -1,0 +1,620 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Future Todo API",
+    "version": "1.0.0",
+    "description": "Public REST contract of the Future Todo backend (Stage 1 modular monolith). All paths are relative to the server URL, which already includes /api/v1. Stage 2 (microservices) must not change this file.\n\nAuthentication: send `Authorization: Bearer <accessToken>` on every endpoint except /auth/*. Access tokens live 15 minutes; renew with POST /auth/refresh (refresh tokens are rotated on every use: always store the new one).\n\nErrors: every non-2xx response has the body `{\"code\": \"SOME_CODE\", \"message\": \"human text\"}`. 401 = missing/invalid/expired token, 403 = not allowed, 404 = not found (also used for objects you may not see), 400 = invalid input, 409 = conflict, 429 = rate limited.\n\nOFFLINE SYNC MODEL. Every synced entity (type `group`, `list`, `task`, `step`) is a set of fields. Every field has its own hybrid-logical-clock (HLC) string. HLC format: `<unix millis, 15 digits zero padded>:<counter, 5 digits zero padded>:<deviceId>` e.g. `001759570000000:00001:web-1a2b`. HLC strings compare correctly with plain string comparison. Per field the larger HLC wins (last write wins, FR-8.3); equal HLC = already applied. Deletion is the pseudo field `deleted` (true/false) with its own HLC (tombstone). Entity JSON always carries `clocks` = map fieldName -> HLC of the last accepted change of that field. Clients push changes with POST /sync/push and fetch with GET /sync/pull?since=<seq>. The pull cursor `nextSeq` is a server-wide increasing number: store it and send it as `since` next time (start with 0). Pull returns only entities the caller may see: own lists/groups plus lists shared with the caller, with their tasks and steps. When the caller joins a shared list the server re-emits that list's current state, so a normal pull is enough. `accessibleListIds` in the pull response lists every list the caller can currently access: delete local lists (and their tasks/steps) that are not in it (the caller was removed from them).\n\nREAL TIME (FR-5.6, PR-3). Open a WebSocket to `/api/v1/ws?token=<accessToken>` (ws:// or wss:// on the same host). The server sends text frames: `{\"type\":\"changes\",\"seq\":123}` meaning 'something changed for you, call GET /sync/pull now', and `{\"type\":\"notification\", ...}` for in-app notifications (see Notifications). Send the text `ping` to receive `pong`. Reconnect with a fresh access token on close. The token is only checked during the handshake.\n\nREST CRUD endpoints for lists/groups/tasks/steps exist for simple clients; they write through the same field-level LWW engine using a server HLC. Written fields in PATCH bodies are partial: only the keys that are present are changed; send explicit null to clear a nullable field. Field names in write bodies are exactly the entity field names (camelCase).\n\nDates: `dueDate`/`myDayDate` are plain dates (YYYY-MM-DD, no time zone). `reminderAt`/`completedAt`/`createdAt` are RFC 3339 timestamps. 'My Day' and 'Planned' take the client's local date in the `today` query parameter, so the day boundary follows the user's local time zone."
+  },
+  "servers": [
+    { "url": "http://localhost:8080/api/v1", "description": "Local development" }
+  ],
+  "tags": [
+    { "name": "Auth" }, { "name": "Me" }, { "name": "Lists" }, { "name": "Tasks" },
+    { "name": "SmartLists" }, { "name": "Search" }, { "name": "Sharing" },
+    { "name": "Sync" }, { "name": "Notifications" }, { "name": "Admin" }
+  ],
+  "security": [ { "bearerAuth": [] } ],
+  "paths": {
+    "/auth/register": {
+      "post": {
+        "tags": ["Auth"], "operationId": "register", "security": [],
+        "summary": "FR-1.1 Register with email and password; a confirmation email is sent",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RegisterRequest" } } } },
+        "responses": {
+          "201": { "description": "Created, email not yet verified", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UserProfile" } } } },
+          "400": { "$ref": "#/components/responses/Error" },
+          "409": { "description": "EMAIL_TAKEN", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "429": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/auth/verify-email": {
+      "post": {
+        "tags": ["Auth"], "operationId": "verifyEmail", "security": [],
+        "summary": "FR-1.1 Confirm email with the token from the email link",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TokenRequest" } } } },
+        "responses": { "204": { "description": "Verified" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/auth/resend-verification": {
+      "post": {
+        "tags": ["Auth"], "operationId": "resendVerification", "security": [],
+        "summary": "Send the confirmation email again (always 202)",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EmailRequest" } } } },
+        "responses": { "202": { "description": "Accepted" } }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": ["Auth"], "operationId": "login", "security": [],
+        "summary": "Log in with email and password (rate limited)",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginRequest" } } } },
+        "responses": {
+          "200": { "description": "Token pair", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TokenPair" } } } },
+          "401": { "description": "INVALID_CREDENTIALS", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "403": { "description": "EMAIL_NOT_VERIFIED or ACCOUNT_BLOCKED", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "429": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "tags": ["Auth"], "operationId": "refresh", "security": [],
+        "summary": "Exchange a refresh token for a new token pair (the old refresh token stops working)",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RefreshRequest" } } } },
+        "responses": {
+          "200": { "description": "New token pair", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TokenPair" } } } },
+          "401": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": ["Auth"], "operationId": "logout", "security": [],
+        "summary": "End the session of this refresh token",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RefreshRequest" } } } },
+        "responses": { "204": { "description": "Done" } }
+      }
+    },
+    "/auth/forgot-password": {
+      "post": {
+        "tags": ["Auth"], "operationId": "forgotPassword", "security": [],
+        "summary": "FR-1.3 Send a password reset email (always 202, does not reveal whether the email exists)",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EmailRequest" } } } },
+        "responses": { "202": { "description": "Accepted" }, "429": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/auth/reset-password": {
+      "post": {
+        "tags": ["Auth"], "operationId": "resetPassword", "security": [],
+        "summary": "FR-1.3 Set a new password with the token from the email; all sessions are ended",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResetPasswordRequest" } } } },
+        "responses": { "204": { "description": "Password changed" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/auth/oauth/{provider}": {
+      "post": {
+        "tags": ["Auth"], "operationId": "oauthLogin", "security": [],
+        "summary": "FR-1.2 Log in with an OpenID Connect ID token obtained by the client from Google, Apple or Microsoft",
+        "description": "The backend verifies the ID token signature, expiry, issuer and audience, then creates or links the account (matched by provider subject, then by email) and returns its own tokens. Returns 501 OAUTH_NOT_CONFIGURED when the server has no client id for the provider.",
+        "parameters": [ { "name": "provider", "in": "path", "required": true, "schema": { "type": "string", "enum": ["google", "apple", "microsoft"] } } ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OAuthRequest" } } } },
+        "responses": {
+          "200": { "description": "Token pair", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TokenPair" } } } },
+          "401": { "$ref": "#/components/responses/Error" },
+          "501": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/me": {
+      "get": {
+        "tags": ["Me"], "operationId": "getMe", "summary": "Current user profile",
+        "responses": { "200": { "description": "Profile", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UserProfile" } } } }, "401": { "$ref": "#/components/responses/Error" } }
+      },
+      "patch": {
+        "tags": ["Me"], "operationId": "updateMe", "summary": "FR-1.4 Change name and/or photo (photoUrl is a URL string, max 2048 chars)",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateProfileRequest" } } } },
+        "responses": { "200": { "description": "Updated profile", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UserProfile" } } } } }
+      },
+      "delete": {
+        "tags": ["Me"], "operationId": "deleteMe", "summary": "FR-1.6 Delete the account with all its data (irreversible)",
+        "responses": { "204": { "description": "Deleted" } }
+      }
+    },
+    "/me/password": {
+      "post": {
+        "tags": ["Me"], "operationId": "changePassword", "summary": "FR-1.4 Change password",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChangePasswordRequest" } } } },
+        "responses": { "204": { "description": "Changed" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/me/settings": {
+      "get": {
+        "tags": ["Me"], "operationId": "getSettings", "summary": "FR-9 Free-form user settings JSON (theme, language, ...) stored per account",
+        "responses": { "200": { "description": "Settings", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } } }
+      },
+      "put": {
+        "tags": ["Me"], "operationId": "putSettings", "summary": "Replace the settings JSON",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } },
+        "responses": { "200": { "description": "Stored settings", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } } }
+      }
+    },
+    "/me/sessions": {
+      "get": {
+        "tags": ["Me"], "operationId": "listSessions", "summary": "FR-1.5 Active sessions (devices)",
+        "responses": { "200": { "description": "Sessions", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Session" } } } } } }
+      },
+      "delete": {
+        "tags": ["Me"], "operationId": "endAllSessions", "summary": "FR-1.5 End all sessions on all devices",
+        "responses": { "204": { "description": "Done" } }
+      }
+    },
+    "/me/sessions/{id}": {
+      "delete": {
+        "tags": ["Me"], "operationId": "endSession", "summary": "FR-1.5 End one session",
+        "parameters": [ { "$ref": "#/components/parameters/Id" } ],
+        "responses": { "204": { "description": "Done" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/me/export": {
+      "get": {
+        "tags": ["Me"], "operationId": "exportData", "summary": "FR-1.6 Export all own data as one JSON document",
+        "responses": { "200": { "description": "Export", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } } }
+      }
+    },
+    "/list-groups": {
+      "get": {
+        "tags": ["Lists"], "operationId": "listGroups", "summary": "FR-2.3 Own list groups (not deleted), ordered by position",
+        "responses": { "200": { "description": "Groups", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Group" } } } } } }
+      },
+      "post": {
+        "tags": ["Lists"], "operationId": "createGroup", "summary": "FR-2.3 Create a group. Body fields: name (required), position",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GroupWrite" } } } },
+        "responses": { "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Group" } } } } }
+      }
+    },
+    "/list-groups/{id}": {
+      "patch": {
+        "tags": ["Lists"], "operationId": "updateGroup", "summary": "FR-2.3/FR-2.4 Rename / reorder a group",
+        "parameters": [ { "$ref": "#/components/parameters/Id" } ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GroupWrite" } } } },
+        "responses": { "200": { "description": "Updated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Group" } } } }, "404": { "$ref": "#/components/responses/Error" } }
+      },
+      "delete": {
+        "tags": ["Lists"], "operationId": "deleteGroup", "summary": "FR-2.3 Dissolve a group: its lists stay and become ungrouped",
+        "parameters": [ { "$ref": "#/components/parameters/Id" } ],
+        "responses": { "204": { "description": "Done" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/lists": {
+      "get": {
+        "tags": ["Lists"], "operationId": "getLists", "summary": "FR-2.1 Own lists and lists shared with me (not deleted), ordered by position",
+        "responses": { "200": { "description": "Lists", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/TaskList" } } } } } }
+      },
+      "post": {
+        "tags": ["Lists"], "operationId": "createList", "summary": "FR-2.1/2.2 Create a list. Body fields: name (required), icon (emoji), theme, groupId, position",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ListWrite" } } } },
+        "responses": { "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskList" } } } } }
+      }
+    },
+    "/lists/{id}": {
+      "get": {
+        "tags": ["Lists"], "operationId": "getList", "summary": "One list",
+        "parameters": [ { "$ref": "#/components/parameters/Id" } ],
+        "responses": { "200": { "description": "List", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskList" } } } }, "404": { "$ref": "#/components/responses/Error" } }
+      },
+      "patch": {
+        "tags": ["Lists"], "operationId": "updateList", "summary": "FR-2.1/2.2/2.3/2.4 Rename, set icon/theme, move to a group (groupId), reorder (position). Owner only.",
+        "parameters": [ { "$ref": "#/components/parameters/Id" } ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ListWrite" } } } },
+        "responses": { "200": { "description": "Updated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskList" } } } }, "403": { "$ref": "#/components/responses/Error" }, "404": { "$ref": "#/components/responses/Error" } }
+      },
+      "delete": {
+        "tags": ["Lists"], "operationId": "deleteList", "summary": "FR-2.1 Delete a list (tombstone). Owner only.",
+        "parameters": [ { "$ref": "#/components/parameters/Id" } ],
+        "responses": { "204": { "description": "Deleted" }, "403": { "$ref": "#/components/responses/Error" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/lists/{listId}/tasks": {
+      "get": {
+        "tags": ["Tasks"], "operationId": "getTasks", "summary": "FR-3.13/3.14 Tasks of a list (not deleted) with their steps",
+        "parameters": [
+          { "name": "listId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "sort", "in": "query", "schema": { "type": "string", "enum": ["manual", "importance", "dueDate", "alphabetical", "createdAt"], "default": "manual" } },
+          { "name": "order", "in": "query", "schema": { "type": "string", "enum": ["asc", "desc"], "default": "asc" } },
+          { "name": "showCompleted", "in": "query", "schema": { "type": "boolean", "default": true } }
+        ],
+        "responses": { "200": { "description": "Tasks", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Task" } } } } }, "404": { "$ref": "#/components/responses/Error" } }
+      },
+      "post": {
+        "tags": ["Tasks"], "operationId": "createTask", "summary": "FR-3.1 Create a task (only `title` is required, max 255 chars). Any other task field may be set too.",
+        "parameters": [ { "name": "listId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } } ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskWrite" } } } },
+        "responses": { "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Task" } } } }, "400": { "$ref": "#/components/responses/Error" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/tasks/{id}": {
+      "get": {
+        "tags": ["Tasks"], "operationId": "getTask", "summary": "One task with steps",
+        "parameters": [ { "$ref": "#/components/parameters/Id" } ],
+        "responses": { "200": { "description": "Task", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Task" } } } }, "404": { "$ref": "#/components/responses/Error" } }
+      },
+      "patch": {
+        "tags": ["Tasks"], "operationId": "updateTask",
+        "summary": "FR-3.2..3.8, 3.11, 3.12, 4.1, 5.4 Partial update. completed (done/undone), important, dueDate, reminderAt, repeatType/repeatInterval/repeatDays, note, myDayDate (add to My Day = today's local date), listId (move to another list), assigneeId (must be a member of the list), deleted=false (undo delete within 5 s, FR-3.12), position (manual order).",
+        "description": "When `completed` becomes true on a task with `repeatType`, the server creates the next occurrence as a new task (copy with the next due date and uncompleted steps) and it arrives via sync/WebSocket; clients must NOT create it themselves. `completedAt` is set by the server on REST writes.",
+        "parameters": [ { "$ref": "#/components/parameters/Id" } ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TaskWrite" } } } },
+        "responses": { "200": { "description": "Updated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Task" } } } }, "400": { "$ref": "#/components/responses/Error" }, "404": { "$ref": "#/components/responses/Error" } }
+      },
+      "delete": {
+        "tags": ["Tasks"], "operationId": "deleteTask", "summary": "Delete a task (tombstone; undo with PATCH deleted=false)",
+        "parameters": [ { "$ref": "#/components/parameters/Id" } ],
+        "responses": { "204": { "description": "Deleted" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/tasks/{taskId}/steps": {
+      "get": {
+        "tags": ["Tasks"], "operationId": "getSteps", "summary": "FR-3.7 Steps of a task, ordered by position",
+        "parameters": [ { "name": "taskId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } } ],
+        "responses": { "200": { "description": "Steps", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Step" } } } } } }
+      },
+      "post": {
+        "tags": ["Tasks"], "operationId": "createStep", "summary": "FR-3.7 Add a step (title required)",
+        "parameters": [ { "name": "taskId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } } ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StepWrite" } } } },
+        "responses": { "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Step" } } } } }
+      }
+    },
+    "/steps/{id}": {
+      "patch": {
+        "tags": ["Tasks"], "operationId": "updateStep", "summary": "FR-3.7 Rename, complete or reorder (position) a step",
+        "parameters": [ { "$ref": "#/components/parameters/Id" } ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StepWrite" } } } },
+        "responses": { "200": { "description": "Updated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Step" } } } } }
+      },
+      "delete": {
+        "tags": ["Tasks"], "operationId": "deleteStep", "summary": "Delete a step",
+        "parameters": [ { "$ref": "#/components/parameters/Id" } ],
+        "responses": { "204": { "description": "Deleted" } }
+      }
+    },
+    "/smart-lists/{type}": {
+      "get": {
+        "tags": ["SmartLists"], "operationId": "getSmartList",
+        "summary": "FR-4.1, 4.3, 4.4, 4.5, 4.6 Smart lists: my-day, important, planned, assigned-to-me, all, completed",
+        "description": "`my-day`: tasks with myDayDate == today in lists the caller owns or assigned to the caller. `planned`: not completed tasks that have a dueDate, also returned grouped in `groups` with keys overdue, today, tomorrow, thisWeek (up to Sunday), later. `assigned-to-me`: tasks assigned to the caller. All smart lists only contain tasks of lists the caller can access and that are not deleted.",
+        "parameters": [
+          { "name": "type", "in": "path", "required": true, "schema": { "type": "string", "enum": ["my-day", "important", "planned", "assigned-to-me", "all", "completed"] } },
+          { "name": "today", "in": "query", "description": "Client local date YYYY-MM-DD (default: server UTC date)", "schema": { "type": "string", "format": "date" } }
+        ],
+        "responses": { "200": { "description": "Smart list", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SmartList" } } } }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/smart-lists/my-day/suggestions": {
+      "get": {
+        "tags": ["SmartLists"], "operationId": "getMyDaySuggestions",
+        "summary": "FR-4.2 Suggested tasks for My Day: not completed, not already in My Day, due today or overdue or previously added to My Day",
+        "parameters": [ { "name": "today", "in": "query", "schema": { "type": "string", "format": "date" } } ],
+        "responses": { "200": { "description": "Tasks", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Task" } } } } } }
+      }
+    },
+    "/search": {
+      "get": {
+        "tags": ["Search"], "operationId": "search",
+        "summary": "FR-7.1/7.2/7.3 Full-text search over task titles, notes and steps in all accessible lists (PostgreSQL 'simple' configuration, prefix match on every word, so it works while typing)",
+        "parameters": [
+          { "name": "q", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "includeCompleted", "in": "query", "schema": { "type": "boolean", "default": false } }
+        ],
+        "responses": { "200": { "description": "Tasks, newest first, max 100", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Task" } } } } } }
+      }
+    },
+    "/lists/{listId}/invitations": {
+      "post": {
+        "tags": ["Sharing"], "operationId": "createInvitation",
+        "summary": "FR-5.1 Create an invitation link token for a list (owner only). Build the link in the client as <frontend>/join/<token>",
+        "parameters": [ { "name": "listId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } } ],
+        "responses": { "201": { "description": "Invitation", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Invitation" } } } }, "403": { "$ref": "#/components/responses/Error" } }
+      },
+      "delete": {
+        "tags": ["Sharing"], "operationId": "revokeInvitations",
+        "summary": "FR-5.2 Revoke all existing invitation links of the list so nobody new can join with an old link (owner only). Existing members stay.",
+        "parameters": [ { "name": "listId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } } ],
+        "responses": { "204": { "description": "Revoked" }, "403": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/invitations/{token}/accept": {
+      "post": {
+        "tags": ["Sharing"], "operationId": "acceptInvitation", "summary": "FR-5.1 Join a shared list with an invitation token. Then call GET /sync/pull: the list and its tasks arrive as changes.",
+        "parameters": [ { "name": "token", "in": "path", "required": true, "schema": { "type": "string" } } ],
+        "responses": { "200": { "description": "Joined", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/JoinResult" } } } }, "404": { "description": "INVITATION_INVALID (unknown or revoked)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } } }
+      }
+    },
+    "/lists/{listId}/members": {
+      "get": {
+        "tags": ["Sharing"], "operationId": "getMembers", "summary": "FR-5.3 Members of a list (visible to every member, owner included)",
+        "parameters": [ { "name": "listId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } } ],
+        "responses": { "200": { "description": "Members", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Member" } } } } }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/lists/{listId}/members/{userId}": {
+      "delete": {
+        "tags": ["Sharing"], "operationId": "removeMember", "summary": "FR-5.5 Owner removes a member, or a member leaves (userId = own id). The owner cannot leave.",
+        "parameters": [
+          { "name": "listId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "userId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": { "204": { "description": "Removed" }, "400": { "$ref": "#/components/responses/Error" }, "403": { "$ref": "#/components/responses/Error" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/sync/push": {
+      "post": {
+        "tags": ["Sync"], "operationId": "syncPush",
+        "summary": "FR-8.2/8.3 Push queued offline changes. Each change is applied independently with per-field last-write-wins; rejected ones are reported, the rest are applied.",
+        "description": "Order inside the request does not matter: the server applies groups, lists, tasks, steps in that order. A task/step may only be created when its list/task exists (create them in the same push). Creating a new id creates the entity. Field names per entity: group: name, position, deleted. list: name, icon, theme, groupId, position, deleted. task: listId, title, note, completed, completedAt, important, dueDate, reminderAt, repeatType, repeatInterval, repeatDays, myDayDate, assigneeId, position, deleted. step: taskId, title, completed, position, deleted. Unknown fields are ignored. repeatType values: DAILY, WEEKDAYS, WEEKLY, MONTHLY, YEARLY (repeatInterval >= 1 gives 'custom interval'; repeatDays e.g. \"MON,WED\" for WEEKLY).",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PushRequest" } } } },
+        "responses": { "200": { "description": "Result", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PushResult" } } } } }
+      }
+    },
+    "/sync/pull": {
+      "get": {
+        "tags": ["Sync"], "operationId": "syncPull", "summary": "Fetch changes after a cursor",
+        "parameters": [
+          { "name": "since", "in": "query", "schema": { "type": "integer", "format": "int64", "default": 0 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 500, "maximum": 1000 } }
+        ],
+        "responses": { "200": { "description": "Changes", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PullResult" } } } } }
+      }
+    },
+    "/notifications": {
+      "get": {
+        "tags": ["Notifications"], "operationId": "getNotifications", "summary": "FR-6.3 In-app notifications (latest 100), e.g. a task was assigned to me",
+        "parameters": [ { "name": "unreadOnly", "in": "query", "schema": { "type": "boolean", "default": false } } ],
+        "responses": { "200": { "description": "Notifications", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Notification" } } } } } }
+      }
+    },
+    "/notifications/{id}/read": {
+      "post": {
+        "tags": ["Notifications"], "operationId": "markNotificationRead", "summary": "Mark one notification as read",
+        "parameters": [ { "$ref": "#/components/parameters/Id" } ],
+        "responses": { "204": { "description": "Done" } }
+      }
+    },
+    "/notifications/preferences": {
+      "get": {
+        "tags": ["Notifications"], "operationId": "getNotificationPreferences", "summary": "FR-6.4 Notification type preferences",
+        "responses": { "200": { "description": "Preferences", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NotificationPreferences" } } } } }
+      },
+      "put": {
+        "tags": ["Notifications"], "operationId": "putNotificationPreferences", "summary": "FR-6.4 Replace preferences",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NotificationPreferences" } } } },
+        "responses": { "200": { "description": "Stored", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NotificationPreferences" } } } } }
+      }
+    },
+    "/admin/users": {
+      "get": {
+        "tags": ["Admin"], "operationId": "adminListUsers", "summary": "FR-11.1 List accounts (role ADMIN only)",
+        "parameters": [
+          { "name": "query", "in": "query", "description": "Substring of email or name", "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 0 } },
+          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": { "200": { "description": "Users", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UserPage" } } } }, "403": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/admin/users/{id}/block": {
+      "post": {
+        "tags": ["Admin"], "operationId": "adminBlockUser", "summary": "FR-11.1 Block an account and end its sessions",
+        "parameters": [ { "$ref": "#/components/parameters/Id" } ],
+        "responses": { "204": { "description": "Blocked" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/admin/users/{id}/unblock": {
+      "post": {
+        "tags": ["Admin"], "operationId": "adminUnblockUser", "summary": "FR-11.1 Unblock an account",
+        "parameters": [ { "$ref": "#/components/parameters/Id" } ],
+        "responses": { "204": { "description": "Unblocked" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/admin/stats": {
+      "get": {
+        "tags": ["Admin"], "operationId": "adminStats", "summary": "FR-11.2 Users, activity and platform distribution",
+        "responses": { "200": { "description": "Stats", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminStats" } } } } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": { "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" } },
+    "parameters": {
+      "Id": { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+    },
+    "responses": {
+      "Error": { "description": "Error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+    },
+    "schemas": {
+      "ErrorResponse": { "type": "object", "required": ["code", "message"], "properties": { "code": { "type": "string" }, "message": { "type": "string" } } },
+      "RegisterRequest": { "type": "object", "required": ["email", "password"], "properties": { "email": { "type": "string", "format": "email" }, "password": { "type": "string", "minLength": 8 }, "displayName": { "type": "string" } } },
+      "LoginRequest": { "type": "object", "required": ["email", "password"], "properties": { "email": { "type": "string" }, "password": { "type": "string" }, "deviceName": { "type": "string" }, "platform": { "type": "string", "description": "web, android, ios, windows, macos, linux" } } },
+      "OAuthRequest": { "type": "object", "required": ["idToken"], "properties": { "idToken": { "type": "string" }, "deviceName": { "type": "string" }, "platform": { "type": "string" } } },
+      "RefreshRequest": { "type": "object", "required": ["refreshToken"], "properties": { "refreshToken": { "type": "string" } } },
+      "TokenRequest": { "type": "object", "required": ["token"], "properties": { "token": { "type": "string" } } },
+      "EmailRequest": { "type": "object", "required": ["email"], "properties": { "email": { "type": "string" } } },
+      "ResetPasswordRequest": { "type": "object", "required": ["token", "newPassword"], "properties": { "token": { "type": "string" }, "newPassword": { "type": "string", "minLength": 8 } } },
+      "ChangePasswordRequest": { "type": "object", "required": ["currentPassword", "newPassword"], "properties": { "currentPassword": { "type": "string" }, "newPassword": { "type": "string", "minLength": 8 } } },
+      "UpdateProfileRequest": { "type": "object", "properties": { "displayName": { "type": "string", "nullable": true }, "photoUrl": { "type": "string", "nullable": true } } },
+      "UserProfile": {
+        "type": "object",
+        "required": ["id", "email", "displayName", "emailVerified", "role", "createdAt"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" }, "email": { "type": "string" }, "displayName": { "type": "string" },
+          "photoUrl": { "type": "string", "nullable": true }, "emailVerified": { "type": "boolean" },
+          "role": { "type": "string", "enum": ["USER", "ADMIN"] }, "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "TokenPair": {
+        "type": "object",
+        "required": ["accessToken", "refreshToken", "expiresIn", "sessionId", "user"],
+        "properties": {
+          "accessToken": { "type": "string" }, "refreshToken": { "type": "string" },
+          "expiresIn": { "type": "integer", "description": "Access token lifetime in seconds (900)" },
+          "sessionId": { "type": "string", "format": "uuid" }, "user": { "$ref": "#/components/schemas/UserProfile" }
+        }
+      },
+      "Session": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" }, "deviceName": { "type": "string", "nullable": true }, "platform": { "type": "string", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" }, "lastUsedAt": { "type": "string", "format": "date-time" }, "current": { "type": "boolean" }
+        }
+      },
+      "Group": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" }, "ownerId": { "type": "string", "format": "uuid" }, "name": { "type": "string" },
+          "position": { "type": "number", "format": "double" }, "deleted": { "type": "boolean" }, "createdAt": { "type": "string", "format": "date-time" },
+          "clocks": { "$ref": "#/components/schemas/Clocks" }
+        }
+      },
+      "GroupWrite": { "type": "object", "properties": { "name": { "type": "string" }, "position": { "type": "number" } } },
+      "TaskList": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" }, "ownerId": { "type": "string", "format": "uuid" },
+          "groupId": { "type": "string", "format": "uuid", "nullable": true }, "name": { "type": "string" },
+          "icon": { "type": "string", "nullable": true, "description": "emoji" }, "theme": { "type": "string", "nullable": true },
+          "position": { "type": "number", "format": "double" }, "deleted": { "type": "boolean" },
+          "createdAt": { "type": "string", "format": "date-time" }, "clocks": { "$ref": "#/components/schemas/Clocks" }
+        }
+      },
+      "ListWrite": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" }, "icon": { "type": "string", "nullable": true }, "theme": { "type": "string", "nullable": true },
+          "groupId": { "type": "string", "format": "uuid", "nullable": true }, "position": { "type": "number" }, "deleted": { "type": "boolean" }
+        }
+      },
+      "Task": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" }, "listId": { "type": "string", "format": "uuid" },
+          "title": { "type": "string", "maxLength": 255 }, "note": { "type": "string" },
+          "completed": { "type": "boolean" }, "completedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "important": { "type": "boolean" }, "dueDate": { "type": "string", "format": "date", "nullable": true },
+          "reminderAt": { "type": "string", "format": "date-time", "nullable": true },
+          "repeatType": { "type": "string", "nullable": true, "enum": ["DAILY", "WEEKDAYS", "WEEKLY", "MONTHLY", "YEARLY", null] },
+          "repeatInterval": { "type": "integer", "minimum": 1 }, "repeatDays": { "type": "string", "nullable": true, "example": "MON,WED" },
+          "myDayDate": { "type": "string", "format": "date", "nullable": true },
+          "assigneeId": { "type": "string", "format": "uuid", "nullable": true },
+          "position": { "type": "number", "format": "double" }, "createdAt": { "type": "string", "format": "date-time" },
+          "deleted": { "type": "boolean" }, "clocks": { "$ref": "#/components/schemas/Clocks" },
+          "steps": { "type": "array", "items": { "$ref": "#/components/schemas/Step" }, "description": "Only present in REST task responses, never in sync payloads" }
+        }
+      },
+      "TaskWrite": {
+        "type": "object",
+        "properties": {
+          "listId": { "type": "string", "format": "uuid" }, "title": { "type": "string", "maxLength": 255 }, "note": { "type": "string" },
+          "completed": { "type": "boolean" }, "important": { "type": "boolean" }, "dueDate": { "type": "string", "format": "date", "nullable": true },
+          "reminderAt": { "type": "string", "format": "date-time", "nullable": true },
+          "repeatType": { "type": "string", "nullable": true }, "repeatInterval": { "type": "integer" }, "repeatDays": { "type": "string", "nullable": true },
+          "myDayDate": { "type": "string", "format": "date", "nullable": true }, "assigneeId": { "type": "string", "format": "uuid", "nullable": true },
+          "position": { "type": "number" }, "deleted": { "type": "boolean" }
+        }
+      },
+      "Step": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" }, "taskId": { "type": "string", "format": "uuid" }, "title": { "type": "string" },
+          "completed": { "type": "boolean" }, "position": { "type": "number", "format": "double" }, "deleted": { "type": "boolean" },
+          "createdAt": { "type": "string", "format": "date-time" }, "clocks": { "$ref": "#/components/schemas/Clocks" }
+        }
+      },
+      "StepWrite": { "type": "object", "properties": { "title": { "type": "string" }, "completed": { "type": "boolean" }, "position": { "type": "number" }, "deleted": { "type": "boolean" } } },
+      "Clocks": { "type": "object", "additionalProperties": { "type": "string" }, "description": "field name -> HLC of its last accepted change" },
+      "SmartList": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string" },
+          "tasks": { "type": "array", "items": { "$ref": "#/components/schemas/Task" } },
+          "groups": { "type": "object", "nullable": true, "additionalProperties": { "type": "array", "items": { "$ref": "#/components/schemas/Task" } }, "description": "Only for planned: overdue, today, tomorrow, thisWeek, later" }
+        }
+      },
+      "Invitation": { "type": "object", "properties": { "token": { "type": "string" }, "listId": { "type": "string", "format": "uuid" }, "createdAt": { "type": "string", "format": "date-time" } } },
+      "JoinResult": { "type": "object", "properties": { "listId": { "type": "string", "format": "uuid" } } },
+      "Member": {
+        "type": "object",
+        "properties": {
+          "userId": { "type": "string", "format": "uuid" }, "displayName": { "type": "string" },
+          "role": { "type": "string", "enum": ["OWNER", "MEMBER"] }, "joinedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "FieldChange": {
+        "type": "object", "required": ["hlc"],
+        "properties": { "value": { "nullable": true, "description": "JSON value of the field (null clears it)" }, "hlc": { "type": "string", "description": "HLC of this field edit" } }
+      },
+      "PushChange": {
+        "type": "object", "required": ["entityType", "entityId", "fields"],
+        "properties": {
+          "entityType": { "type": "string", "enum": ["group", "list", "task", "step"] },
+          "entityId": { "type": "string", "format": "uuid" },
+          "fields": { "type": "object", "additionalProperties": { "$ref": "#/components/schemas/FieldChange" } }
+        }
+      },
+      "PushRequest": { "type": "object", "required": ["changes"], "properties": { "deviceId": { "type": "string" }, "changes": { "type": "array", "items": { "$ref": "#/components/schemas/PushChange" } } } },
+      "PushResult": {
+        "type": "object",
+        "properties": {
+          "applied": { "type": "integer" },
+          "rejected": { "type": "array", "items": { "type": "object", "properties": { "entityId": { "type": "string" }, "code": { "type": "string" }, "message": { "type": "string" } } } },
+          "serverHlc": { "type": "string", "description": "Current server HLC; clients may use it to keep their clock from lagging" }
+        }
+      },
+      "SyncChange": {
+        "type": "object",
+        "properties": {
+          "seq": { "type": "integer", "format": "int64" }, "entityType": { "type": "string" }, "entityId": { "type": "string", "format": "uuid" },
+          "deleted": { "type": "boolean" },
+          "payload": { "type": "object", "additionalProperties": true, "description": "Full entity state (Group, TaskList, Task without steps, or Step) including clocks. Merge it field by field: take a field only when its clock is greater than your local clock for that field." }
+        }
+      },
+      "PullResult": {
+        "type": "object",
+        "properties": {
+          "changes": { "type": "array", "items": { "$ref": "#/components/schemas/SyncChange" } },
+          "nextSeq": { "type": "integer", "format": "int64" }, "hasMore": { "type": "boolean" },
+          "accessibleListIds": { "type": "array", "items": { "type": "string", "format": "uuid" } }
+        }
+      },
+      "Notification": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" }, "type": { "type": "string", "enum": ["TASK_ASSIGNED"] }, "title": { "type": "string" },
+          "body": { "type": "string" }, "data": { "type": "object", "additionalProperties": true }, "read": { "type": "boolean" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "NotificationPreferences": {
+        "type": "object",
+        "properties": { "assignment": { "type": "boolean" }, "reminders": { "type": "boolean" }, "emailDigest": { "type": "boolean" } }
+      },
+      "AdminUser": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" }, "email": { "type": "string" }, "displayName": { "type": "string" }, "role": { "type": "string" },
+          "emailVerified": { "type": "boolean" }, "blocked": { "type": "boolean" }, "createdAt": { "type": "string", "format": "date-time" },
+          "lastSeenAt": { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "UserPage": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/AdminUser" } }, "total": { "type": "integer", "format": "int64" }, "page": { "type": "integer" }, "size": { "type": "integer" } } },
+      "AdminStats": {
+        "type": "object",
+        "properties": {
+          "totalUsers": { "type": "integer", "format": "int64" }, "blockedUsers": { "type": "integer", "format": "int64" },
+          "activeLast7Days": { "type": "integer", "format": "int64" },
+          "platforms": { "type": "object", "additionalProperties": { "type": "integer", "format": "int64" } }
+        }
+      }
+    }
+  }
+}

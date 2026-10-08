@@ -1,0 +1,20 @@
+# Local environment (use .env.example as template)
+.env
+
+# Gradle / Kotlin
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+app/build/
+app/coverage/
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store

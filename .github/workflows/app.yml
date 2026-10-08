@@ -1,0 +1,146 @@
+name: App CI (Flutter web)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "api/**"
+      - ".github/workflows/app.yml"
+  pull_request:
+    paths:
+      - "app/**"
+      - "api/**"
+      - ".github/workflows/app.yml"
+
+concurrency:
+  group: app-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  COVERAGE_MIN: "80"
+  # Pinned so a new Flutter release cannot change lints or behavior under us.
+  # Keep in sync with app/Dockerfile and CLAUDE.md.
+  FLUTTER_VERSION: "3.38.5"
+
+defaults:
+  run:
+    working-directory: app
+
+jobs:
+  analyze:
+    name: Analyze (very_good_analysis)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      - name: Generate code (build_runner)
+        run: dart run build_runner build --delete-conflicting-outputs --force-jit
+      - name: Format check
+        run: dart format --output=none --set-exit-if-changed lib test
+      - name: Analyze
+        run: flutter analyze --fatal-infos
+
+  unit-tests:
+    name: Unit and widget tests + coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      - run: dart run build_runner build --delete-conflicting-outputs --force-jit
+      - name: Install system SQLite (Drift tests use NativeDatabase.memory())
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+      - name: Unit and widget tests (flutter_test)
+        run: flutter test --coverage
+      - name: Coverage gate (>= ${{ env.COVERAGE_MIN }}%)
+        run: |
+          # Sum LF (lines found) and LH (lines hit) from lcov.info, ignoring generated files.
+          awk -v min="$COVERAGE_MIN" '
+            /^SF:/ { skip = ($0 ~ /\.g\.dart|\.freezed\.dart|\.gen\.dart|\/generated\/|\/l10n\/app_localizations/) }
+            /^LF:/ && !skip { lf += substr($0, 4) }
+            /^LH:/ && !skip { lh += substr($0, 4) }
+            END {
+              if (lf == 0) { print "No coverage data found"; exit 1 }
+              pct = lh * 100 / lf
+              printf "Line coverage: %.1f%% (min %s%%)\n", pct, min
+              if (pct < min) exit 1
+            }' coverage/lcov.info
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: app-coverage
+          path: app/coverage/lcov.info
+
+  build-web:
+    name: Web build
+    runs-on: ubuntu-latest
+    needs: [analyze, unit-tests]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      - run: dart run build_runner build --delete-conflicting-outputs --force-jit
+      - name: Prepare web platform (not committed yet)
+        run: |
+          # Keep the committed web files, generate the rest, fetch Drift web assets.
+          cp web/index.html web/manifest.json "$RUNNER_TEMP"/
+          flutter create . --platforms web --project-name future_todo --org com.futuretodo
+          cp "$RUNNER_TEMP/index.html" "$RUNNER_TEMP/manifest.json" web/
+          rm -f test/widget_test.dart
+          [ -f web/sqlite3.wasm ] || curl -fsSL -o web/sqlite3.wasm https://github.com/simolus3/sqlite3.dart/releases/latest/download/sqlite3.wasm
+          [ -f web/drift_worker.js ] || curl -fsSL -o web/drift_worker.js https://github.com/simolus3/drift/releases/latest/download/drift_worker.js
+      - name: Build web
+        run: flutter build web --release
+      - name: Build Docker image (not pushed)
+        working-directory: .
+        run: docker build -t future-todo-app:ci app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-web-build
+          path: app/build/web
+
+  e2e-web:
+    name: E2E (integration_test on web, guest flow, no backend)
+    runs-on: ubuntu-latest
+    needs: [unit-tests]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      - run: dart run build_runner build --delete-conflicting-outputs --force-jit
+      - name: Prepare web platform (not committed yet)
+        run: |
+          # Keep the committed web files, generate the rest, fetch Drift web assets.
+          cp web/index.html web/manifest.json "$RUNNER_TEMP"/
+          flutter create . --platforms web --project-name future_todo --org com.futuretodo
+          cp "$RUNNER_TEMP/index.html" "$RUNNER_TEMP/manifest.json" web/
+          rm -f test/widget_test.dart
+          [ -f web/sqlite3.wasm ] || curl -fsSL -o web/sqlite3.wasm https://github.com/simolus3/sqlite3.dart/releases/latest/download/sqlite3.wasm
+          [ -f web/drift_worker.js ] || curl -fsSL -o web/drift_worker.js https://github.com/simolus3/drift/releases/latest/download/drift_worker.js
+      - name: Set up chromedriver
+        uses: nanasess/setup-chromedriver@v2
+      - name: Run e2e tests
+        run: |
+          chromedriver --port=4444 &
+          flutter drive             --driver=test_driver/integration_test.dart             --target=integration_test/app_test.dart             -d web-server --browser-name=chrome --headless

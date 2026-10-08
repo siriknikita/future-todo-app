@@ -172,6 +172,16 @@ Coverage is measured with Kover (backend) and `flutter test --coverage` (client)
 - **CD:** the backend is built into a Docker image and pushed to GHCR. The Flutter web build is published as a static site. Both are deployed to a test environment.
 - **Local development:** `docker compose up` starts PostgreSQL, MinIO, and Mailpit.
 
+## Divergences from the plan (Part One)
+
+- Scope for now is the monolithic backend and the Flutter **web** client; mobile and desktop pipelines are not set up. The end-to-end level for the client therefore runs `integration_test` on web (`flutter drive` with chromedriver) instead of a Linux desktop build under Xvfb.
+- `docker-compose.yml` also contains a one-shot `minio-init` service that creates the attachments bucket.
+- CI is currently build, lint, test, and coverage only. The CD part (GHCR image, deploy to a test environment) and the OpenAPI drift check are not wired up yet. Both Dockerfiles are built in CI but not pushed.
+- Backend test levels are not separate Gradle tasks: everything runs under `test` and the levels are split by class name (`*IntegrationTest`, `*E2eTest`, the rest is unit). CI runs them as separate jobs through `--tests` filters. There is no Gradle wrapper committed yet.
+- Backend scope: there is no `files` module yet (no attachments, MinIO is unused), and the `notifications` push is a stub. FR-3.9 and server push are therefore not implemented.
+- The client's e2e test runs the guest flow on web and needs no backend.
+- The web platform files (`flutter create`) and the Drift assets `sqlite3.wasm` and `drift_worker.js` are not committed; CI and `app/Dockerfile` generate or download them.
+
 ## Decisions and alternatives considered
 
 | Decision | Alternatives | Why this choice |
