@@ -78,7 +78,7 @@ jobs:
               printf "Line coverage: %.1f%% (min %s%%)\n", pct, min
               if (pct < min) exit 1
             }' coverage/lcov.info
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: app-coverage
@@ -111,7 +111,7 @@ jobs:
       - name: Build Docker image (not pushed)
         working-directory: .
         run: docker build -t future-todo-app:ci app
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: app-web-build
           path: app/build/web
