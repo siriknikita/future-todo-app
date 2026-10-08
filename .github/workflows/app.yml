@@ -139,7 +139,7 @@ jobs:
           [ -f web/sqlite3.wasm ] || curl -fsSL -o web/sqlite3.wasm https://github.com/simolus3/sqlite3.dart/releases/latest/download/sqlite3.wasm
           [ -f web/drift_worker.js ] || curl -fsSL -o web/drift_worker.js https://github.com/simolus3/drift/releases/latest/download/drift_worker.js
       - name: Set up chromedriver
-        uses: nanasess/setup-chromedriver@v2
+        uses: nanasess/setup-chromedriver@v3
       - name: Run e2e tests
         run: |
           chromedriver --port=4444 &
