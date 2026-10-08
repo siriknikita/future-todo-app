@@ -1,7 +1,7 @@
 # Build context: backend/   (docker build -t future-todo-backend backend)
 
 # ---- Build stage ----
-FROM gradle:8-jdk21 AS build
+FROM gradle:9-jdk21 AS build
 WORKDIR /workspace
 COPY . .
 # Tests run in CI, not during the image build.
