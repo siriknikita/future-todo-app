@@ -8,12 +8,14 @@ class FakeRemoteApi implements RemoteApi {
   final List<(int, String)> log = [];
   int _seq = 0;
   int pushCalls = 0;
+  int pullCalls = 0;
   bool failNext = false;
 
   final Map<String, List<ListMember>> members = {};
   final List<String> calls = [];
   String? loginEmail;
   bool failRemoveMember = false;
+  bool failJoin = false;
 
   /// Lists returned as `accessibleListIds`; null means "not reported".
   List<String>? accessible;
@@ -59,6 +61,7 @@ class FakeRemoteApi implements RemoteApi {
 
   @override
   Future<PullResult> pull(int cursor) async {
+    pullCalls++;
     final keys = {for (final e in log.where((e) => e.$1 > cursor)) e.$2};
     return PullResult(
       changes: [for (final k in keys) records[k]!],
@@ -141,7 +144,10 @@ class FakeRemoteApi implements RemoteApi {
   }
 
   @override
-  Future<void> joinByInvite(String token) async => calls.add('join:$token');
+  Future<void> joinByInvite(String token) async {
+    if (failJoin) throw const ApiException('Invitation expired');
+    calls.add('join:$token');
+  }
 
   @override
   Uri? realtimeUri() => null;

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:future_todo/core/hlc.dart';
+import 'package:future_todo/core/pref_keys.dart';
 import 'package:future_todo/data/remote/remote_api.dart';
 import 'package:future_todo/data/repository.dart';
+import 'package:future_todo/features/home/home_page.dart';
+import 'package:go_router/go_router.dart';
 
 import '../helpers/pump_app.dart';
 
@@ -39,6 +42,18 @@ Future<void> addListOwnedByOther(
     () => TodoRepository(h.db, HlcClock('other'))
         .createList(name, ownerId: 'user-9'),
   );
+  await tester.pumpAndSettle();
+}
+
+const signedInPrefs = <String, Object>{
+  PrefKeys.accessToken: 'a',
+  PrefKeys.refreshToken: 'r',
+  PrefKeys.userId: 'user-1',
+  PrefKeys.userEmail: 'a@b.co',
+};
+
+Future<void> openLink(WidgetTester tester, String location) async {
+  GoRouter.of(tester.element(find.byType(HomePage))).go(location);
   await tester.pumpAndSettle();
 }
 
@@ -125,6 +140,47 @@ void main() {
     await tester.tap(find.byKey(const Key('leave-list')));
     await tester.pumpAndSettle();
     expect(find.text('Not allowed'), findsOneWidget);
+
+    await disposeApp(tester, h);
+  });
+
+  testWidgets('an invitation link joins the list, then syncs (FR-5.1)',
+      (tester) async {
+    final h = await pumpApp(tester, prefs: signedInPrefs);
+    final pullsBefore = h.remote.pullCalls;
+
+    await openLink(tester, '/join/tok-1');
+    expect(h.remote.calls, contains('join:tok-1'));
+    expect(h.remote.pullCalls, pullsBefore + 1);
+    expect(find.byType(HomePage), findsOneWidget);
+
+    await disposeApp(tester, h);
+  });
+
+  testWidgets('a failed join shows the error on the invitation page',
+      (tester) async {
+    final h = await pumpApp(tester, prefs: signedInPrefs);
+    h.remote.failJoin = true;
+    final pullsBefore = h.remote.pullCalls;
+
+    await openLink(tester, '/join/tok-1');
+    expect(find.text('Join shared list'), findsOneWidget);
+    expect(
+      find.text('Something went wrong: Invitation expired'),
+      findsOneWidget,
+    );
+    expect(h.remote.pullCalls, pullsBefore);
+
+    await disposeApp(tester, h);
+  });
+
+  testWidgets('guests opening an invitation link are sent to sign in',
+      (tester) async {
+    final h = await pumpApp(tester);
+
+    await openLink(tester, '/join/tok-1');
+    expect(find.byKey(const Key('login-submit')), findsOneWidget);
+    expect(h.remote.calls, isNot(contains('join:tok-1')));
 
     await disposeApp(tester, h);
   });

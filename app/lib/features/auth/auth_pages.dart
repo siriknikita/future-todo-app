@@ -540,8 +540,7 @@ class _InvitePageState extends ConsumerState<InvitePage> {
       return;
     }
     try {
-      await ref.read(remoteApiProvider).joinByInvite(widget.token);
-      await ref.read(syncServiceProvider).syncNow();
+      await ref.read(sharingServiceProvider).joinByInvite(widget.token);
       if (mounted) context.go('/');
     } on Object catch (e) {
       if (mounted) setState(() => _error = e.toString());

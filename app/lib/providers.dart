@@ -8,6 +8,7 @@ import 'package:future_todo/data/db/database.dart';
 import 'package:future_todo/data/remote/http_remote_api.dart';
 import 'package:future_todo/data/remote/remote_api.dart';
 import 'package:future_todo/data/repository.dart';
+import 'package:future_todo/data/sharing_service.dart';
 import 'package:future_todo/data/sync/realtime_listener.dart';
 import 'package:future_todo/data/sync/sync_service.dart';
 import 'package:future_todo/domain/smart_lists.dart';
@@ -359,6 +360,26 @@ final autoSyncProvider = Provider<void>((ref) {
     realtime.stop();
   });
 });
+
+// -------------------------------------------------------------------- sharing
+
+final sharingServiceProvider = Provider<SharingService>(
+  (ref) => SharingService(
+    remote: ref.watch(remoteApiProvider),
+    repository: ref.watch(repositoryProvider),
+    sync: ref.watch(syncServiceProvider),
+  ),
+);
+
+/// Members of a shared list. They are read from the server on demand: the
+/// local schema has no members table yet (deviation from "UI reads only the
+/// local DB", see report).
+final listMembersProvider =
+    FutureProvider.family.autoDispose<List<ListMember>, String>(
+  (ref, listId) => ref.watch(sharingServiceProvider).members(listId),
+);
+
+// ----------------------------------------------------------------- sync state
 
 enum SyncIndicator { guest, synced, pending, error }
 

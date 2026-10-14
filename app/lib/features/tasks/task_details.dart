@@ -7,7 +7,6 @@ import 'package:future_todo/data/remote/remote_api.dart';
 import 'package:future_todo/domain/repeat.dart';
 import 'package:future_todo/features/common/labels.dart';
 import 'package:future_todo/features/common/widgets.dart';
-import 'package:future_todo/features/sharing/share_dialog.dart';
 import 'package:future_todo/l10n/app_localizations.dart';
 import 'package:future_todo/providers.dart';
 import 'package:intl/intl.dart';

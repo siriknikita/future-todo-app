@@ -181,6 +181,7 @@ Coverage is measured with Kover (backend) and `flutter test --coverage` (client)
 - Backend scope: there is no `files` module yet (no attachments, MinIO is unused), and the `notifications` push is a stub. FR-3.9 and server push are therefore not implemented.
 - The client's e2e test runs the guest flow on web and needs no backend.
 - The web platform files (`flutter create`) and the Drift assets `sqlite3.wasm` and `drift_worker.js` are not committed; CI and `app/Dockerfile` generate or download them.
+- Sharing (FR-5.x) needs the server, and the client has no local members table yet, so list members are read from the server on demand. Widgets still never call the API: invitations, revoking links, removing or leaving members, joining by link, and the member list go through the data-layer `SharingService` (`app/lib/data/sharing_service.dart`).
 
 ## Decisions and alternatives considered
 
