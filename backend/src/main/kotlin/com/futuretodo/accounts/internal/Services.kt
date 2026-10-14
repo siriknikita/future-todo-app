@@ -13,6 +13,7 @@ import org.springframework.boot.ApplicationArguments
 import org.springframework.boot.ApplicationRunner
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
+import org.springframework.mail.MailException
 import org.springframework.mail.SimpleMailMessage
 import org.springframework.mail.javamail.JavaMailSender
 import org.springframework.security.crypto.password.PasswordEncoder
@@ -104,8 +105,9 @@ class MailService(
     fun sendPasswordReset(to: String, token: String) =
         send(to, "Reset your Future Todo password", "Reset your password: $frontendUrl/reset-password?token=$token")
 
+    /** Best effort: a mail outage must not fail the request. The body holds secret links and is never logged. */
     private fun send(to: String, subject: String, text: String) {
-        log.info("Sending mail to={} subject='{}' body='{}'", to, subject, text)
+        log.info("Sending mail to={} subject='{}'", to, subject)
         try {
             val message = SimpleMailMessage()
             message.from = from
@@ -113,8 +115,8 @@ class MailService(
             message.subject = subject
             message.text = text
             sender.send(message)
-        } catch (e: Exception) {
-            log.warn("Could not send mail to {}: {}", to, e.message)
+        } catch (e: MailException) {
+            log.warn("Could not send mail to {}: {}", to, e.message, e)
         }
     }
 }
