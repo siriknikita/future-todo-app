@@ -6,7 +6,10 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.http.HttpStatus
@@ -24,19 +27,8 @@ class AuthServiceTest {
     private val oidc = mockk<OidcVerifier>()
     private val service = AuthService(users, emailTokens, sessions, encoder, mail, limiter, oidc)
 
-    private fun user(verified: Boolean = true, blocked: Boolean = false) = UserRecord(
-        UUID.randomUUID(),
-        "a@b.com",
-        "hash",
-        "Alice",
-        null,
-        verified,
-        "USER",
-        blocked,
-        "{}",
-        OffsetDateTime.now(),
-        null,
-    )
+    private fun user(verified: Boolean = true, blocked: Boolean = false) =
+        UserRecord.newUser("a@b.com", "hash", "Alice", verified).copy(blocked = blocked)
 
     @Test
     fun `register stores user and sends verification email`() {
@@ -116,6 +108,27 @@ class AuthServiceTest {
     }
 
     @Test
+    fun `expired tokens are rejected with the same error for verify and reset`() {
+        val expired = OffsetDateTime.now().minusMinutes(1)
+        every { emailTokens.find("old", "VERIFY") } returns EmailTokenRecord("old", UUID.randomUUID(), "VERIFY", expired, false)
+        every { emailTokens.find("old", "RESET") } returns EmailTokenRecord("old", UUID.randomUUID(), "RESET", expired, false)
+        every { emailTokens.find("nope", "RESET") } returns null
+
+        listOf(
+            { service.verifyEmail("old") },
+            { service.resetPassword("old", "newpassword") },
+            { service.resetPassword("nope", "newpassword") }
+        ).forEach { call ->
+            val e = assertThrows<ApiException> { call() }
+            assertEquals(HttpStatus.BAD_REQUEST, e.status)
+            assertEquals("INVALID_TOKEN", e.code)
+            assertEquals("Token is invalid or expired", e.message)
+        }
+        verify(exactly = 0) { users.markVerified(any()) }
+        verify(exactly = 0) { users.updatePassword(any(), any()) }
+    }
+
+    @Test
     fun `verify email marks user verified`() {
         val record = EmailTokenRecord("t", UUID.randomUUID(), "VERIFY", OffsetDateTime.now().plusDays(1), false)
         every { emailTokens.find("t", "VERIFY") } returns record
@@ -134,6 +147,59 @@ class AuthServiceTest {
 
         every { users.findByEmail("a@b.com") } returns user()
         service.forgotPassword("a@b.com", "ip")
+        verify { mail.sendPasswordReset("a@b.com", any()) }
+    }
+
+    @Test
+    fun `oauth login creates a verified user for a new identity`() {
+        every { oidc.verify("google", "id-token") } returns OidcIdentity("sub-1", " New@Mail.com ", null)
+        every { users.findByOAuth("google", "sub-1") } returns null
+        every { users.findByEmail("new@mail.com") } returns null
+        val saved = slot<UserRecord>()
+        every { users.insert(capture(saved), "google", "sub-1") } returns Unit
+
+        service.oauthLogin("google", OAuthRequest("id-token", "laptop", "web"))
+
+        val created = saved.captured
+        assertEquals("new@mail.com", created.email)
+        assertNull(created.passwordHash)
+        assertEquals("new", created.displayName)
+        assertNull(created.photoUrl)
+        assertTrue(created.emailVerified)
+        assertEquals("USER", created.role)
+        assertFalse(created.blocked)
+        assertEquals("{}", created.settings)
+        assertNull(created.lastSeenAt)
+        verify { sessions.open(created, "laptop", "web") }
+    }
+
+    @Test
+    fun `oauth login links an existing account by email and rejects a blocked one`() {
+        val existing = user()
+        every { oidc.verify("apple", "id-token") } returns OidcIdentity("sub-2", "A@B.com", "Alice")
+        every { users.findByOAuth("apple", "sub-2") } returns null
+        every { users.findByEmail("a@b.com") } returns existing
+
+        service.oauthLogin("apple", OAuthRequest("id-token"))
+
+        verify { users.linkOAuth(existing.id, "apple", "sub-2") }
+        verify { sessions.open(existing, null, null) }
+
+        every { users.findByOAuth("apple", "sub-2") } returns user(blocked = true)
+        val e = assertThrows<ApiException> { service.oauthLogin("apple", OAuthRequest("id-token")) }
+        assertEquals(HttpStatus.FORBIDDEN, e.status)
+        assertEquals("ACCOUNT_BLOCKED", e.code)
+        assertEquals("Account is blocked", e.message)
+    }
+
+    @Test
+    fun `emails are trimmed and lower-cased before lookup`() {
+        every { users.findByEmail("a@b.com") } returns user(verified = false)
+
+        service.resendVerification("  A@B.com ")
+        service.forgotPassword(" A@b.COM", "ip")
+
+        verify { mail.sendVerification("a@b.com", any()) }
         verify { mail.sendPasswordReset("a@b.com", any()) }
     }
 

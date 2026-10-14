@@ -3,10 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:future_todo/core/hlc.dart';
+import 'package:future_todo/core/pref_keys.dart';
 import 'package:future_todo/data/db/database.dart';
 import 'package:future_todo/data/remote/http_remote_api.dart';
 import 'package:future_todo/data/remote/remote_api.dart';
 import 'package:future_todo/data/repository.dart';
+import 'package:future_todo/data/sharing_service.dart';
 import 'package:future_todo/data/sync/realtime_listener.dart';
 import 'package:future_todo/data/sync/sync_service.dart';
 import 'package:future_todo/domain/smart_lists.dart';
@@ -35,20 +37,20 @@ final remoteApiProvider = Provider<RemoteApi>((ref) {
   final prefs = ref.watch(prefsProvider);
   return HttpRemoteApi(baseUrl: apiBaseUrl)
     ..deviceId = ref.watch(hlcClockProvider).node
-    ..accessToken = prefs.getString('auth.access')
-    ..refreshToken = prefs.getString('auth.refresh')
+    ..accessToken = prefs.getString(PrefKeys.accessToken)
+    ..refreshToken = prefs.getString(PrefKeys.refreshToken)
     ..onTokens = (access, refresh) {
-      unawaited(prefs.setString('auth.access', access));
-      unawaited(prefs.setString('auth.refresh', refresh));
+      unawaited(prefs.setString(PrefKeys.accessToken, access));
+      unawaited(prefs.setString(PrefKeys.refreshToken, refresh));
     };
 });
 
 final hlcClockProvider = Provider<HlcClock>((ref) {
   final prefs = ref.watch(prefsProvider);
-  var node = prefs.getString('deviceId');
+  var node = prefs.getString(PrefKeys.deviceId);
   if (node == null) {
     node = const Uuid().v4();
-    unawaited(prefs.setString('deviceId', node));
+    unawaited(prefs.setString(PrefKeys.deviceId, node));
   }
   return HlcClock(node);
 });
@@ -166,13 +168,13 @@ class SettingsNotifier extends Notifier<AppSettings> {
     final prefs = ref.watch(prefsProvider);
     return AppSettings(
       themeMode: ThemeMode.values.firstWhere(
-        (m) => m.name == prefs.getString('themeMode'),
+        (m) => m.name == prefs.getString(PrefKeys.themeMode),
         orElse: () => ThemeMode.system,
       ),
-      languageCode: prefs.getString('language'),
-      hideCompleted: prefs.getBool('hideCompleted') ?? false,
+      languageCode: prefs.getString(PrefKeys.language),
+      hideCompleted: prefs.getBool(PrefKeys.hideCompleted) ?? false,
       sortMode: SortMode.values.firstWhere(
-        (m) => m.name == prefs.getString('sortMode'),
+        (m) => m.name == prefs.getString(PrefKeys.sortMode),
         orElse: () => SortMode.manual,
       ),
     );
@@ -180,7 +182,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
 
   Future<void> setThemeMode(ThemeMode mode) async {
     state = state.copyWith(themeMode: mode);
-    await _prefs.setString('themeMode', mode.name);
+    await _prefs.setString(PrefKeys.themeMode, mode.name);
   }
 
   /// Pass `null` to follow the system language (FR-9.2).
@@ -189,20 +191,20 @@ class SettingsNotifier extends Notifier<AppSettings> {
         ? state.copyWith(clearLanguage: true)
         : state.copyWith(languageCode: code);
     if (code == null) {
-      await _prefs.remove('language');
+      await _prefs.remove(PrefKeys.language);
     } else {
-      await _prefs.setString('language', code);
+      await _prefs.setString(PrefKeys.language, code);
     }
   }
 
   Future<void> setHideCompleted({required bool hide}) async {
     state = state.copyWith(hideCompleted: hide);
-    await _prefs.setBool('hideCompleted', hide);
+    await _prefs.setBool(PrefKeys.hideCompleted, hide);
   }
 
   Future<void> setSortMode(SortMode mode) async {
     state = state.copyWith(sortMode: mode);
-    await _prefs.setString('sortMode', mode.name);
+    await _prefs.setString(PrefKeys.sortMode, mode.name);
   }
 }
 
@@ -225,14 +227,18 @@ class AuthController extends Notifier<AuthState> {
   @override
   AuthState build() {
     final prefs = ref.watch(prefsProvider);
-    final token = prefs.getString('auth.access');
-    final id = prefs.getString('auth.userId');
-    final email = prefs.getString('auth.email');
+    final token = prefs.getString(PrefKeys.accessToken);
+    final id = prefs.getString(PrefKeys.userId);
+    final email = prefs.getString(PrefKeys.userEmail);
     if (token == null || id == null || email == null) {
       return const AuthState();
     }
     return AuthState(
-      user: AuthUser(id: id, email: email, name: prefs.getString('auth.name')),
+      user: AuthUser(
+        id: id,
+        email: email,
+        name: prefs.getString(PrefKeys.userName),
+      ),
     );
   }
 
@@ -248,8 +254,8 @@ class AuthController extends Notifier<AuthState> {
     _api
       ..accessToken = session.accessToken
       ..refreshToken = session.refreshToken;
-    await _prefs.setString('auth.access', session.accessToken);
-    await _prefs.setString('auth.refresh', session.refreshToken);
+    await _prefs.setString(PrefKeys.accessToken, session.accessToken);
+    await _prefs.setString(PrefKeys.refreshToken, session.refreshToken);
     await _saveUser(session.user);
     state = AuthState(user: session.user);
   }
@@ -288,22 +294,18 @@ class AuthController extends Notifier<AuthState> {
     _api
       ..accessToken = null
       ..refreshToken = null;
-    for (final k in [
-      'auth.access',
-      'auth.refresh',
-      'auth.userId',
-      'auth.email',
-      'auth.name',
-    ]) {
+    for (final k in PrefKeys.authKeys) {
       await _prefs.remove(k);
     }
     state = const AuthState();
   }
 
   Future<void> _saveUser(AuthUser user) async {
-    await _prefs.setString('auth.userId', user.id);
-    await _prefs.setString('auth.email', user.email);
-    if (user.name != null) await _prefs.setString('auth.name', user.name!);
+    await _prefs.setString(PrefKeys.userId, user.id);
+    await _prefs.setString(PrefKeys.userEmail, user.email);
+    if (user.name != null) {
+      await _prefs.setString(PrefKeys.userName, user.name!);
+    }
   }
 }
 
@@ -317,8 +319,8 @@ final syncServiceProvider = Provider<SyncService>((ref) {
   final service = SyncService(
     repository: ref.watch(repositoryProvider),
     remote: ref.watch(remoteApiProvider),
-    loadCursor: () => prefs.getInt('sync.cursor') ?? 0,
-    saveCursor: (c) => prefs.setInt('sync.cursor', c),
+    loadCursor: () => prefs.getInt(PrefKeys.syncCursor) ?? 0,
+    saveCursor: (c) => prefs.setInt(PrefKeys.syncCursor, c),
   );
   ref.onDispose(service.dispose);
   return service;
@@ -358,6 +360,26 @@ final autoSyncProvider = Provider<void>((ref) {
     realtime.stop();
   });
 });
+
+// -------------------------------------------------------------------- sharing
+
+final sharingServiceProvider = Provider<SharingService>(
+  (ref) => SharingService(
+    remote: ref.watch(remoteApiProvider),
+    repository: ref.watch(repositoryProvider),
+    sync: ref.watch(syncServiceProvider),
+  ),
+);
+
+/// Members of a shared list. They are read from the server on demand: the
+/// local schema has no members table yet (deviation from "UI reads only the
+/// local DB", see report).
+final listMembersProvider =
+    FutureProvider.family.autoDispose<List<ListMember>, String>(
+  (ref, listId) => ref.watch(sharingServiceProvider).members(listId),
+);
+
+// ----------------------------------------------------------------- sync state
 
 enum SyncIndicator { guest, synced, pending, error }
 

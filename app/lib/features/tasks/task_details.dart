@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:future_todo/core/dates.dart';
+import 'package:future_todo/core/limits.dart';
 import 'package:future_todo/data/db/database.dart';
 import 'package:future_todo/data/remote/remote_api.dart';
 import 'package:future_todo/domain/repeat.dart';
+import 'package:future_todo/domain/smart_lists.dart';
 import 'package:future_todo/features/common/labels.dart';
 import 'package:future_todo/features/common/widgets.dart';
-import 'package:future_todo/features/sharing/share_dialog.dart';
+import 'package:future_todo/features/tasks/task_tile.dart';
 import 'package:future_todo/l10n/app_localizations.dart';
 import 'package:future_todo/providers.dart';
 import 'package:intl/intl.dart';
@@ -25,22 +27,14 @@ class TaskDetails extends ConsumerWidget {
     final task = tasks.where((t) => t.id == taskId).firstOrNull;
     if (task == null) return Center(child: Text(l.selectTaskHint));
 
-    final repo = ref.read(repositoryProvider);
     final lists = ref.watch(listsProvider).valueOrNull ?? const <TaskList>[];
     final steps = (ref.watch(stepsProvider).valueOrNull ?? const <TaskStep>[])
         .where((s) => s.taskId == taskId)
         .toList();
     final now = ref.watch(todayProvider).valueOrNull ?? DateTime.now();
-    final locale = Localizations.localeOf(context).toString();
-    final inMyDay = task.myDayDate == dateKey(now);
-    final rule = RepeatRule.fromStorage(
-      task.repeatType,
-      task.repeatInterval,
-      task.repeatDays,
-    );
     final list = lists.where((li) => li.id == task.listId).firstOrNull;
-    final signedIn = ref.watch(authProvider).signedIn;
-    final myId = ref.watch(authProvider).user?.id;
+    final auth = ref.watch(authProvider);
+    final myId = auth.user?.id;
 
     return Material(
       color: Theme.of(context).colorScheme.surface,
@@ -48,232 +42,359 @@ class TaskDetails extends ConsumerWidget {
         key: const Key('task-details'),
         padding: const EdgeInsets.all(12),
         children: [
-          Row(
-            children: [
-              Checkbox(
-                shape: const CircleBorder(),
-                value: task.isCompleted,
-                onChanged: (v) =>
-                    repo.setCompleted(task.id, completed: v ?? false),
-              ),
-              Expanded(
-                child: CommitTextField(
-                  key: Key('details-title-${task.id}'),
-                  value: task.title,
-                  maxLength: 255,
-                  style: Theme.of(context).textTheme.titleMedium,
-                  onCommit: (v) {
-                    if (v.trim().isNotEmpty) repo.renameTask(task.id, v.trim());
-                  },
-                ),
-              ),
-              IconButton(
-                tooltip: l.important,
-                icon: Icon(
-                  task.isImportant ? Icons.star : Icons.star_border,
-                  color: task.isImportant ? Colors.amber : null,
-                ),
-                onPressed: () =>
-                    repo.setImportant(task.id, important: !task.isImportant),
-              ),
-            ],
-          ),
-          // Steps (FR-3.7)
-          ReorderableListView(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            buildDefaultDragHandles: false,
-            onReorder: (oldIndex, newIndex) {
-              if (newIndex > oldIndex) newIndex -= 1;
-              final ids = steps.map((s) => s.id).toList();
-              ids.insert(newIndex, ids.removeAt(oldIndex));
-              repo.reorderSteps(ids);
-            },
-            children: [
-              for (var i = 0; i < steps.length; i++)
-                ListTile(
-                  key: ValueKey('step-${steps[i].id}'),
-                  dense: true,
-                  leading: Checkbox(
-                    shape: const CircleBorder(),
-                    value: steps[i].isDone,
-                    onChanged: (v) =>
-                        repo.setStepDone(steps[i].id, done: v ?? false),
-                  ),
-                  title: Text(
-                    steps[i].title,
-                    style: steps[i].isDone
-                        ? const TextStyle(
-                            decoration: TextDecoration.lineThrough,
-                          )
-                        : null,
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.close, size: 18),
-                        tooltip: l.delete,
-                        onPressed: () => repo.deleteStep(steps[i].id),
-                      ),
-                      ReorderableDragStartListener(
-                        index: i,
-                        child: const Icon(Icons.drag_handle, size: 18),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          ),
+          _TitleRow(task: task),
+          _StepsList(steps: steps),
           _AddStepField(taskId: task.id),
           const Divider(),
-          SwitchListTile(
-            key: const Key('my-day-switch'),
-            secondary: const Icon(Icons.wb_sunny_outlined),
-            title: Text(inMyDay ? l.removeFromMyDay : l.addToMyDay),
-            value: inMyDay,
-            onChanged: (v) => repo.setMyDay(task.id, inMyDay: v),
-          ),
-          ListTile(
-            key: const Key('due-tile'),
-            leading: const Icon(Icons.event_outlined),
-            title: Text(
-              task.dueDate == null
-                  ? l.addDueDate
-                  : DateFormat.yMMMEd(locale)
-                      .format(parseDateKey(task.dueDate!)),
-            ),
-            trailing: task.dueDate == null
-                ? null
-                : IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => repo.setDueDate(task.id, null),
-                  ),
-            onTap: () async {
-              final picked = await showDatePicker(
-                context: context,
-                initialDate:
-                    task.dueDate == null ? now : parseDateKey(task.dueDate!),
-                firstDate: DateTime(2000),
-                lastDate: DateTime(2100),
-              );
-              if (picked != null) await repo.setDueDate(task.id, picked);
-            },
-          ),
-          ListTile(
-            key: const Key('reminder-tile'),
-            leading: const Icon(Icons.notifications_none),
-            title: Text(
-              task.reminderAt == null
-                  ? l.addReminder
-                  : DateFormat.yMMMEd(locale).add_Hm().format(task.reminderAt!),
-            ),
-            trailing: task.reminderAt == null
-                ? null
-                : IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => repo.setReminder(task.id, null),
-                  ),
-            onTap: () async {
-              final base = task.reminderAt ?? now.add(const Duration(hours: 1));
-              final date = await showDatePicker(
-                context: context,
-                initialDate: base,
-                firstDate: DateTime(2000),
-                lastDate: DateTime(2100),
-              );
-              if (date == null || !context.mounted) return;
-              final time = await showTimePicker(
-                context: context,
-                initialTime: TimeOfDay.fromDateTime(base),
-              );
-              if (time == null) return;
-              await repo.setReminder(
-                task.id,
-                DateTime(
-                  date.year,
-                  date.month,
-                  date.day,
-                  time.hour,
-                  time.minute,
-                ),
-              );
-            },
-          ),
-          ListTile(
-            key: const Key('repeat-tile'),
-            leading: const Icon(Icons.repeat),
-            title: Text(repeatLabel(l, rule.type)),
-            onTap: () async {
-              final result = await showDialog<RepeatRule>(
-                context: context,
-                builder: (_) => RepeatDialog(initial: rule),
-              );
-              if (result != null) await repo.setRepeat(task.id, result);
-            },
-          ),
+          _MyDaySwitch(task: task, now: now),
+          _DueDateTile(task: task, now: now),
+          _ReminderTile(task: task, now: now),
+          _RepeatTile(task: task),
           if (list != null &&
-              signedIn &&
+              auth.signedIn &&
               (list.isShared || (list.ownerId != null && list.ownerId != myId)))
             _AssigneeTile(task: task, list: list),
-          ListTile(
-            leading: const Icon(Icons.drive_file_move_outline),
-            title: Text(l.moveToList),
-            trailing: DropdownButton<String>(
-              key: const Key('move-list-dropdown'),
-              value:
-                  lists.any((li) => li.id == task.listId) ? task.listId : null,
-              items: [
-                for (final li in lists)
-                  DropdownMenuItem(value: li.id, child: Text(li.name)),
-              ],
-              onChanged: (v) {
-                if (v != null) repo.moveTask(task.id, v);
-              },
-            ),
-          ),
+          _MoveToListTile(task: task, lists: lists),
           const Divider(),
-          CommitTextField(
-            key: Key('details-note-${task.id}'),
-            value: task.note,
-            maxLines: 6,
-            decoration: InputDecoration(
-              hintText: l.addNote,
-              border: const OutlineInputBorder(),
-            ),
-            onCommit: (v) => repo.setNote(task.id, v),
-          ),
+          // Keyed so the note keeps its draft and focus when the assignee
+          // tile above it appears or disappears.
+          _NoteField(key: ValueKey('note-${task.id}'), task: task),
           const SizedBox(height: 16),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              key: const Key('delete-task'),
-              icon: const Icon(Icons.delete_outline),
-              label: Text(l.deleteTask),
-              onPressed: () async {
-                final messenger = ScaffoldMessenger.of(context);
-                final navigator = Navigator.of(context);
-                final narrow = MediaQuery.sizeOf(context).width < 1000;
-                await repo.deleteTask(task.id);
-                ref.read(selectedTaskIdProvider.notifier).state = null;
-                if (navigator.canPop() && narrow) navigator.pop();
-                // Undo within 5 seconds (FR-3.12).
-                messenger
-                  ..hideCurrentSnackBar()
-                  ..showSnackBar(
-                    SnackBar(
-                      content: Text(l.taskDeleted),
-                      duration: const Duration(seconds: 5),
-                      action: SnackBarAction(
-                        label: l.undo,
-                        onPressed: () => repo.restoreTask(task.id),
-                      ),
-                    ),
-                  );
-              },
+          _DeleteTaskButton(taskId: task.id),
+        ],
+      ),
+    );
+  }
+}
+
+/// Completion checkbox, editable title and importance star.
+class _TitleRow extends ConsumerWidget {
+  const _TitleRow({required this.task});
+
+  final Task task;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l = AppLocalizations.of(context);
+    final repo = ref.read(repositoryProvider);
+    return Row(
+      children: [
+        Checkbox(
+          shape: const CircleBorder(),
+          value: task.isCompleted,
+          onChanged: (v) => repo.setCompleted(task.id, completed: v ?? false),
+        ),
+        Expanded(
+          child: CommitTextField(
+            key: Key('details-title-${task.id}'),
+            value: task.title,
+            maxLength: maxTitleLength,
+            style: Theme.of(context).textTheme.titleMedium,
+            onCommit: (v) {
+              if (v.trim().isNotEmpty) repo.renameTask(task.id, v.trim());
+            },
+          ),
+        ),
+        IconButton(
+          tooltip: l.important,
+          icon: Icon(
+            task.isImportant ? Icons.star : Icons.star_border,
+            color: task.isImportant ? Colors.amber : null,
+          ),
+          onPressed: () =>
+              repo.setImportant(task.id, important: !task.isImportant),
+        ),
+      ],
+    );
+  }
+}
+
+/// Steps of the task, finishable, deletable and reorderable (FR-3.7).
+class _StepsList extends ConsumerWidget {
+  const _StepsList({required this.steps});
+
+  final List<TaskStep> steps;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l = AppLocalizations.of(context);
+    final repo = ref.read(repositoryProvider);
+    return ReorderableListView(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      buildDefaultDragHandles: false,
+      onReorder: (oldIndex, newIndex) {
+        if (newIndex > oldIndex) newIndex -= 1;
+        final ids = steps.map((s) => s.id).toList();
+        ids.insert(newIndex, ids.removeAt(oldIndex));
+        repo.reorderSteps(ids);
+      },
+      children: [
+        for (var i = 0; i < steps.length; i++)
+          ListTile(
+            key: ValueKey('step-${steps[i].id}'),
+            dense: true,
+            leading: Checkbox(
+              shape: const CircleBorder(),
+              value: steps[i].isDone,
+              onChanged: (v) => repo.setStepDone(steps[i].id, done: v ?? false),
+            ),
+            title: Text(
+              steps[i].title,
+              style: steps[i].isDone
+                  ? const TextStyle(decoration: TextDecoration.lineThrough)
+                  : null,
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  tooltip: l.delete,
+                  onPressed: () => repo.deleteStep(steps[i].id),
+                ),
+                ReorderableDragStartListener(
+                  index: i,
+                  child: const Icon(Icons.drag_handle, size: 18),
+                ),
+              ],
             ),
           ),
+      ],
+    );
+  }
+}
+
+/// Adds the task to or removes it from "My Day" (FR-4.1).
+class _MyDaySwitch extends ConsumerWidget {
+  const _MyDaySwitch({required this.task, required this.now});
+
+  final Task task;
+  final DateTime now;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l = AppLocalizations.of(context);
+    final inMyDay = isInMyDay(task, now);
+    return SwitchListTile(
+      key: const Key('my-day-switch'),
+      secondary: const Icon(Icons.wb_sunny_outlined),
+      title: Text(inMyDay ? l.removeFromMyDay : l.addToMyDay),
+      value: inMyDay,
+      onChanged: (v) =>
+          ref.read(repositoryProvider).setMyDay(task.id, inMyDay: v),
+    );
+  }
+}
+
+/// Due date: pick with a date picker, clear with the close button (FR-3.4).
+class _DueDateTile extends ConsumerWidget {
+  const _DueDateTile({required this.task, required this.now});
+
+  final Task task;
+  final DateTime now;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l = AppLocalizations.of(context);
+    final locale = Localizations.localeOf(context).toString();
+    final repo = ref.read(repositoryProvider);
+    final due = task.dueDate == null ? null : parseDateKey(task.dueDate!);
+    return ListTile(
+      key: const Key('due-tile'),
+      leading: const Icon(Icons.event_outlined),
+      title: Text(
+        due == null ? l.addDueDate : DateFormat.yMMMEd(locale).format(due),
+      ),
+      trailing: due == null
+          ? null
+          : IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: () => repo.setDueDate(task.id, null),
+            ),
+      onTap: () async {
+        final picked = await showDatePicker(
+          context: context,
+          initialDate: due ?? now,
+          firstDate: DateTime(2000),
+          lastDate: DateTime(2100),
+        );
+        if (picked != null) await repo.setDueDate(task.id, picked);
+      },
+    );
+  }
+}
+
+/// Reminder: a date and then a time, clear with the close button (FR-3.5).
+class _ReminderTile extends ConsumerWidget {
+  const _ReminderTile({required this.task, required this.now});
+
+  final Task task;
+  final DateTime now;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l = AppLocalizations.of(context);
+    final locale = Localizations.localeOf(context).toString();
+    final repo = ref.read(repositoryProvider);
+    return ListTile(
+      key: const Key('reminder-tile'),
+      leading: const Icon(Icons.notifications_none),
+      title: Text(
+        task.reminderAt == null
+            ? l.addReminder
+            : DateFormat.yMMMEd(locale).add_Hm().format(task.reminderAt!),
+      ),
+      trailing: task.reminderAt == null
+          ? null
+          : IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: () => repo.setReminder(task.id, null),
+            ),
+      onTap: () async {
+        final at = await _pickDateTime(
+          context,
+          task.reminderAt ?? now.add(const Duration(hours: 1)),
+        );
+        if (at != null) await repo.setReminder(task.id, at);
+      },
+    );
+  }
+}
+
+/// Shows a date picker and then a time picker; null if either is cancelled.
+Future<DateTime?> _pickDateTime(BuildContext context, DateTime initial) async {
+  final date = await showDatePicker(
+    context: context,
+    initialDate: initial,
+    firstDate: DateTime(2000),
+    lastDate: DateTime(2100),
+  );
+  if (date == null || !context.mounted) return null;
+  final time = await showTimePicker(
+    context: context,
+    initialTime: TimeOfDay.fromDateTime(initial),
+  );
+  if (time == null) return null;
+  return DateTime(date.year, date.month, date.day, time.hour, time.minute);
+}
+
+/// Opens [RepeatDialog] (FR-3.6).
+class _RepeatTile extends ConsumerWidget {
+  const _RepeatTile({required this.task});
+
+  final Task task;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l = AppLocalizations.of(context);
+    final rule = RepeatRule.fromStorage(
+      task.repeatType,
+      task.repeatInterval,
+      task.repeatDays,
+    );
+    return ListTile(
+      key: const Key('repeat-tile'),
+      leading: const Icon(Icons.repeat),
+      title: Text(repeatLabel(l, rule.type)),
+      onTap: () async {
+        final repo = ref.read(repositoryProvider);
+        final result = await showDialog<RepeatRule>(
+          context: context,
+          builder: (_) => RepeatDialog(initial: rule),
+        );
+        if (result != null) await repo.setRepeat(task.id, result);
+      },
+    );
+  }
+}
+
+/// Moves the task to another list (FR-3.10).
+class _MoveToListTile extends ConsumerWidget {
+  const _MoveToListTile({required this.task, required this.lists});
+
+  final Task task;
+  final List<TaskList> lists;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l = AppLocalizations.of(context);
+    return ListTile(
+      leading: const Icon(Icons.drive_file_move_outline),
+      title: Text(l.moveToList),
+      trailing: DropdownButton<String>(
+        key: const Key('move-list-dropdown'),
+        value: lists.any((li) => li.id == task.listId) ? task.listId : null,
+        items: [
+          for (final li in lists)
+            DropdownMenuItem(value: li.id, child: Text(li.name)),
         ],
+        onChanged: (v) {
+          if (v != null) ref.read(repositoryProvider).moveTask(task.id, v);
+        },
+      ),
+    );
+  }
+}
+
+/// Free-text note (FR-3.8).
+class _NoteField extends ConsumerWidget {
+  const _NoteField({required this.task, super.key});
+
+  final Task task;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l = AppLocalizations.of(context);
+    return CommitTextField(
+      key: Key('details-note-${task.id}'),
+      value: task.note,
+      maxLines: 6,
+      decoration: InputDecoration(
+        hintText: l.addNote,
+        border: const OutlineInputBorder(),
+      ),
+      onCommit: (v) => ref.read(repositoryProvider).setNote(task.id, v),
+    );
+  }
+}
+
+/// Deletes the task and offers to undo it for 5 seconds (FR-3.12).
+class _DeleteTaskButton extends ConsumerWidget {
+  const _DeleteTaskButton({required this.taskId});
+
+  final String taskId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l = AppLocalizations.of(context);
+    return Align(
+      alignment: Alignment.centerRight,
+      child: TextButton.icon(
+        key: const Key('delete-task'),
+        icon: const Icon(Icons.delete_outline),
+        label: Text(l.deleteTask),
+        onPressed: () async {
+          final repo = ref.read(repositoryProvider);
+          final messenger = ScaffoldMessenger.of(context);
+          final navigator = Navigator.of(context);
+          final narrow = MediaQuery.sizeOf(context).width < wideBreakpoint;
+          await repo.deleteTask(taskId);
+          ref.read(selectedTaskIdProvider.notifier).state = null;
+          if (navigator.canPop() && narrow) navigator.pop();
+          messenger
+            ..hideCurrentSnackBar()
+            ..showSnackBar(
+              SnackBar(
+                content: Text(l.taskDeleted),
+                duration: const Duration(seconds: 5),
+                action: SnackBarAction(
+                  label: l.undo,
+                  onPressed: () => repo.restoreTask(taskId),
+                ),
+              ),
+            );
+        },
       ),
     );
   }
@@ -310,6 +431,7 @@ class _AddStepFieldState extends ConsumerState<_AddStepField> {
       ),
       onSubmitted: (v) async {
         await ref.read(repositoryProvider).addStep(widget.taskId, v);
+        if (!mounted) return;
         _controller.clear();
       },
     );

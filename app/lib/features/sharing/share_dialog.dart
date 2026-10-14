@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:future_todo/data/db/database.dart';
-import 'package:future_todo/data/remote/remote_api.dart';
 import 'package:future_todo/features/common/widgets.dart';
 import 'package:future_todo/l10n/app_localizations.dart';
 import 'package:future_todo/providers.dart';
@@ -12,14 +11,6 @@ Future<void> showShareDialog(BuildContext context, TaskList list) =>
       context: context,
       builder: (_) => ShareDialog(list: list),
     );
-
-/// Members of a shared list. They are read from the server on demand: the
-/// local schema has no members table yet (deviation from "UI reads only the
-/// local DB", see report).
-final listMembersProvider =
-    FutureProvider.family.autoDispose<List<ListMember>, String>(
-  (ref, listId) => ref.watch(remoteApiProvider).listMembers(listId),
-);
 
 /// Sharing UI: invitation link (FR-5.1), revoking old links (FR-5.2),
 /// participants (FR-5.3) and removing / leaving (FR-5.5).
@@ -47,8 +38,7 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
     final auth = ref.watch(authProvider);
-    final api = ref.read(remoteApiProvider);
-    final repo = ref.read(repositoryProvider);
+    final sharing = ref.read(sharingServiceProvider);
     final list = widget.list;
 
     if (!auth.signedIn) {
@@ -82,9 +72,9 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
                   icon: const Icon(Icons.link),
                   label: Text(l.createInviteLink),
                   onPressed: () => _run(() async {
-                    final token = await api.createInvitation(list.id);
-                    await repo.setListShared(list.id, shared: true);
-                    setState(() => _link = '${Uri.base.origin}/join/$token');
+                    final link = await sharing.createInviteLink(list.id);
+                    if (!context.mounted) return;
+                    setState(() => _link = link);
                   }),
                 ),
                 if (_link != null)
@@ -101,9 +91,10 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
                 TextButton(
                   key: const Key('revoke-invites'),
                   onPressed: () => _run(() async {
-                    await api.revokeInvitations(list.id);
+                    await sharing.revokeInvites(list.id);
+                    if (!context.mounted) return;
                     setState(() => _link = null);
-                    if (context.mounted) showMessage(context, l.linksRevoked);
+                    showMessage(context, l.linksRevoked);
                   }),
                   child: Text(l.revokeLinks),
                 ),
@@ -126,7 +117,10 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
                                 tooltip: l.removeMember,
                                 icon: const Icon(Icons.person_remove_outlined),
                                 onPressed: () => _run(() async {
-                                  await api.removeMember(list.id, m.userId);
+                                  await sharing.removeMember(
+                                    list.id,
+                                    m.userId,
+                                  );
                                   ref.invalidate(listMembersProvider(list.id));
                                 }),
                               )
@@ -139,8 +133,7 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
                 TextButton(
                   key: const Key('leave-list'),
                   onPressed: () => _run(() async {
-                    await api.removeMember(list.id, auth.user!.id);
-                    await ref.read(syncServiceProvider).syncNow();
+                    await sharing.leaveList(list.id, auth.user!.id);
                     if (context.mounted) Navigator.pop(context);
                   }),
                   child: Text(l.leaveList),

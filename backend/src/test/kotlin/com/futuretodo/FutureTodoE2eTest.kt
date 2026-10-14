@@ -151,6 +151,30 @@ class FutureTodoE2eTest : IntegrationTestBase() {
     }
 
     @Test
+    fun `smart list all and my day suggestions pick the right tasks`() {
+        val user = newUser("smart")
+        val listId = createList(user, "Inbox")
+        val dueToday = createTask(user, listId, "Pay rent", mapOf("dueDate" to "2026-10-04"))
+        val leftover = createTask(user, listId, "Call mom", mapOf("myDayDate" to "2026-10-03"))
+        val alreadyInMyDay = createTask(user, listId, "Already planned", mapOf("dueDate" to "2026-10-01", "myDayDate" to "2026-10-04"))
+        val done = createTask(user, listId, "Done", mapOf("dueDate" to "2026-10-01"))
+        assertEquals(200, api.patch("/tasks/$done", user.accessToken, mapOf("completed" to true)).status)
+        val future = createTask(user, listId, "Later", mapOf("dueDate" to "2026-10-20"))
+
+        val all = api.get("/smart-lists/all", user.accessToken).json()
+        assertEquals("all", all["type"].asText())
+        assertEquals(listOf(future, done, alreadyInMyDay, leftover, dueToday), all["tasks"].map { it["id"].asText() })
+
+        val suggestions = api.get("/smart-lists/my-day/suggestions?today=2026-10-04", user.accessToken).json()
+        assertEquals(listOf(dueToday, leftover), suggestions.map { it["id"].asText() })
+
+        val unknown = api.get("/smart-lists/someday", user.accessToken)
+        assertEquals(404, unknown.status)
+        assertEquals("NOT_FOUND", unknown.json()["code"].asText())
+        assertEquals("Smart list not found", unknown.json()["message"].asText())
+    }
+
+    @Test
     fun `lists can be grouped reordered renamed and deleted`() {
         val user = newUser()
         val group = api.post("/list-groups", user.accessToken, mapOf("name" to "Work"))
@@ -169,6 +193,30 @@ class FutureTodoE2eTest : IntegrationTestBase() {
         assertEquals(204, api.delete("/lists/$listId", user.accessToken).status)
         assertEquals(404, api.get("/lists/$listId", user.accessToken).status)
         assertEquals(400, api.post("/lists", user.accessToken, mapOf("icon" to "x")).status)
+    }
+
+    @Test
+    fun `strangers get 404 for groups lists tasks and steps they cannot see`() {
+        val owner = newUser("private")
+        val stranger = newUser("stranger")
+        val groupId = api.post("/list-groups", owner.accessToken, mapOf("name" to "Mine")).json()["id"].asText()
+        val listId = createList(owner, "Private")
+        val taskId = createTask(owner, listId, "Secret")
+        val stepId = api.post("/tasks/$taskId/steps", owner.accessToken, mapOf("title" to "Hidden")).json()["id"].asText()
+
+        fun assertNotFound(response: ApiResponse, what: String) {
+            assertEquals(404, response.status)
+            assertEquals("NOT_FOUND", response.json()["code"].asText())
+            assertEquals("$what not found", response.json()["message"].asText())
+        }
+        assertNotFound(api.patch("/list-groups/$groupId", stranger.accessToken, mapOf("name" to "Taken")), "Group")
+        assertNotFound(api.get("/lists/$listId", stranger.accessToken), "List")
+        assertNotFound(api.patch("/lists/$listId", stranger.accessToken, mapOf("name" to "Taken")), "List")
+        assertNotFound(api.get("/lists/$listId/tasks", stranger.accessToken), "List")
+        assertNotFound(api.post("/lists/$listId/tasks", stranger.accessToken, mapOf("title" to "Spam")), "List")
+        assertNotFound(api.get("/tasks/$taskId", stranger.accessToken), "Task")
+        assertNotFound(api.patch("/steps/$stepId", stranger.accessToken, mapOf("title" to "Taken")), "Task")
+        assertNotFound(api.get("/lists/${UUID.randomUUID()}/tasks", owner.accessToken), "List")
     }
 
     @Test

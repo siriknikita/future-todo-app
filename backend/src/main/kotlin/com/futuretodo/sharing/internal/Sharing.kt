@@ -5,6 +5,7 @@ import com.futuretodo.accounts.UserDeleted
 import com.futuretodo.accounts.UserDirectory
 import com.futuretodo.shared.ApiException
 import com.futuretodo.shared.CurrentUser
+import com.futuretodo.shared.SecureTokens
 import com.futuretodo.sharing.ListAccess
 import com.futuretodo.sharing.ListRole
 import com.futuretodo.sharing.MembershipChanged
@@ -23,9 +24,7 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
-import java.security.SecureRandom
 import java.time.OffsetDateTime
-import java.util.Base64
 import java.util.UUID
 
 data class MemberDto(val userId: UUID, val displayName: String, val role: String, val joinedAt: OffsetDateTime)
@@ -40,8 +39,6 @@ class SharingService(
     private val directory: UserDirectory,
     private val events: ApplicationEventPublisher,
 ) : ListAccess {
-    private val random = SecureRandom()
-
     // ---- ListAccess (public API for other modules) ----
 
     override fun registerOwner(listId: UUID, ownerId: UUID) {
@@ -72,9 +69,7 @@ class SharingService(
 
     fun createInvitation(listId: UUID, userId: UUID): InvitationDto {
         requireOwner(listId, userId)
-        val bytes = ByteArray(24)
-        random.nextBytes(bytes)
-        val token = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+        val token = SecureTokens.urlSafe(SecureTokens.INVITATION_TOKEN_BYTES)
         jdbc.update("INSERT INTO sharing.invitations (token, list_id, created_by) VALUES (?, ?, ?)", token, listId, userId)
         return InvitationDto(token, listId, OffsetDateTime.now())
     }

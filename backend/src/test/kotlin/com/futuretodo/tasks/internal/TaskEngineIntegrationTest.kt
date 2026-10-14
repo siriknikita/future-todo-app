@@ -120,7 +120,24 @@ class TaskEngineIntegrationTest : IntegrationTestBase() {
         val next = tasks.first { it.id != taskId }
         assertEquals(LocalDate.of(2026, 10, 6), next.dueDate)
         assertFalse(next.completed)
-        assertEquals(listOf("Fill can"), repo.stepsOfTask(next.id).map { it.title })
+        // exactly the fields taken over from the completed task carry a clock
+        val copied = setOf(
+            "listId",
+            "title",
+            "note",
+            "important",
+            "dueDate",
+            "reminderAt",
+            "repeatType",
+            "repeatInterval",
+            "repeatDays",
+            "assigneeId",
+            "position",
+        )
+        assertEquals(copied, next.clocks.keys)
+        val steps = repo.stepsOfTask(next.id)
+        assertEquals(listOf("Fill can"), steps.map { it.title })
+        assertEquals(setOf("title", "position"), steps.single().clocks.keys)
     }
 
     @Test

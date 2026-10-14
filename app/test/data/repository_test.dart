@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:future_todo/core/hlc.dart';
@@ -40,8 +41,10 @@ void main() {
   test('empty titles are rejected and long titles are cut to 255', () async {
     final listId = await repo.createList('L');
     expect(await repo.createTask(listId, '   '), isNull);
-    await repo.createTask(listId, 'x' * 300);
+    final id = (await repo.createTask(listId, 'x' * 300))!;
     expect((await tasks()).single.title.length, 255);
+    await repo.renameTask(id, 'y' * 300);
+    expect((await tasks()).single.title, 'y' * 255);
   });
 
   test('every written field gets its own clock', () async {
@@ -116,6 +119,49 @@ void main() {
     expect(await repo.watchGroups().first, isEmpty);
     expect((await repo.watchLists().first).single.id, l);
     expect((await repo.watchLists().first).single.groupId, isNull);
+  });
+
+  test('new lists and groups go to the end of one shared order (FR-2.4)',
+      () async {
+    final a = await repo.createList('A');
+    final g = await repo.createGroup('G');
+    final b = await repo.createList('B');
+    final lists = await repo.watchLists().first;
+    final groups = await repo.watchGroups().first;
+    expect({for (final l in lists) l.id: l.position}, {a: 1.0, b: 3.0});
+    expect(groups.single.id, g);
+    expect(groups.single.position, 2.0);
+  });
+
+  test('lists the server no longer shares are purged with the oldest clock',
+      () async {
+    final kept = await repo.createList('Kept');
+    final gone = await repo.createList('Gone');
+    final task = (await repo.createTask(gone, 'T'))!;
+    final step = (await repo.addStep(task, 'S'))!;
+    await db.update(db.taskLists).write(
+          const TaskListsCompanion(dirty: Value(false)),
+        );
+
+    await repo.purgeInaccessibleLists({kept});
+
+    expect((await repo.watchLists().first).single.id, kept);
+    final list = await (db.select(db.taskLists)
+          ..where((t) => t.id.equals(gone)))
+        .getSingle();
+    final purgedTask = (await repo.getTask(task))!;
+    final purgedStep = await (db.select(db.taskSteps)
+          ..where((t) => t.id.equals(step)))
+        .getSingle();
+    for (final (deleted, dirty, clocks) in [
+      (list.deleted, list.dirty, list.clocks),
+      (purgedTask.deleted, purgedTask.dirty, purgedTask.clocks),
+      (purgedStep.deleted, purgedStep.dirty, purgedStep.clocks),
+    ]) {
+      expect(deleted, isTrue);
+      expect(dirty, isFalse);
+      expect(decodeClocks(clocks)['deleted'], '000000000000000:00000:purge');
+    }
   });
 
   test('reorder assigns new positions (FR-2.4)', () async {

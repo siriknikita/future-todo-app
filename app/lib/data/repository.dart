@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:future_todo/core/dates.dart';
 import 'package:future_todo/core/hlc.dart';
+import 'package:future_todo/core/limits.dart';
 import 'package:future_todo/core/lww.dart';
 import 'package:future_todo/data/db/database.dart';
 import 'package:future_todo/data/sync_entities.dart';
@@ -101,7 +102,7 @@ class TodoRepository {
   /// list or was removed). The tombstone gets the oldest possible clock so
   /// the list comes back if the user is invited again.
   Future<void> purgeInaccessibleLists(Set<String> accessibleIds) async {
-    const oldest = '000000000000000:00000:purge';
+    final oldest = const Hlc(0, 0, 'purge').toString();
     final lists = await (db.select(db.taskLists)
           ..where((t) => t.deleted.equals(false) & t.dirty.equals(false)))
         .get();
@@ -133,21 +134,30 @@ class TodoRepository {
     });
   }
 
-  Future<double> _nextPosition(Iterable<double> existing) async =>
+  double _nextPosition(Iterable<double> existing) =>
       existing.isEmpty ? 1 : existing.reduce((a, b) => a > b ? a : b) + 1;
 
-  // ----------------------------------------------------------------- groups
-
-  Future<String> createGroup(String name) async {
+  /// Groups and lists share one position space at the top level (FR-2.4).
+  Future<double> _nextTopLevelPosition() async {
     final groups = await (db.select(db.listGroups)
           ..where((t) => t.deleted.equals(false)))
         .get();
     final lists = await (db.select(db.taskLists)
           ..where((t) => t.deleted.equals(false)))
         .get();
-    final pos = await _nextPosition(
+    return _nextPosition(
       [...groups.map((g) => g.position), ...lists.map((l) => l.position)],
     );
+  }
+
+  static String _clampTitle(String title) => title.length > maxTitleLength
+      ? title.substring(0, maxTitleLength)
+      : title;
+
+  // ----------------------------------------------------------------- groups
+
+  Future<String> createGroup(String name) async {
+    final pos = await _nextTopLevelPosition();
     return _create(entities.group, {'name': name, 'position': pos});
   }
 
@@ -173,15 +183,7 @@ class TodoRepository {
     String? icon,
     String? ownerId,
   }) async {
-    final groups = await (db.select(db.listGroups)
-          ..where((t) => t.deleted.equals(false)))
-        .get();
-    final lists = await (db.select(db.taskLists)
-          ..where((t) => t.deleted.equals(false)))
-        .get();
-    final pos = await _nextPosition(
-      [...groups.map((g) => g.position), ...lists.map((l) => l.position)],
-    );
+    final pos = await _nextTopLevelPosition();
     return _create(entities.list, {
       'name': name,
       'groupId': groupId,
@@ -228,7 +230,7 @@ class TodoRepository {
 
   // ------------------------------------------------------------------ tasks
 
-  /// Quick add (FR-3.1): title only, up to 255 characters.
+  /// Quick add (FR-3.1): title only, up to [maxTitleLength] characters.
   Future<String?> createTask(
     String listId,
     String title, {
@@ -242,10 +244,10 @@ class TodoRepository {
     final existing = await (db.select(db.tasks)
           ..where((t) => t.listId.equals(listId) & t.deleted.equals(false)))
         .get();
-    final pos = await _nextPosition(existing.map((t) => t.position));
+    final pos = _nextPosition(existing.map((t) => t.position));
     return _create(entities.task, {
       'listId': listId,
-      'title': trimmed.length > 255 ? trimmed.substring(0, 255) : trimmed,
+      'title': _clampTitle(trimmed),
       'isImportant': important,
       'dueDate': dueDate,
       'myDayDate': inMyDay ? dateKey(_now()) : null,
@@ -258,11 +260,8 @@ class TodoRepository {
   Future<Task?> getTask(String id) =>
       (db.select(db.tasks)..where((t) => t.id.equals(id))).getSingleOrNull();
 
-  Future<void> renameTask(String id, String title) => _mutate(
-        entities.task,
-        id,
-        {'title': title.length > 255 ? title.substring(0, 255) : title},
-      );
+  Future<void> renameTask(String id, String title) =>
+      _mutate(entities.task, id, {'title': _clampTitle(title)});
 
   Future<void> setNote(String id, String note) =>
       _mutate(entities.task, id, {'note': note});
@@ -383,7 +382,7 @@ class TodoRepository {
     final trimmed = title.trim();
     if (trimmed.isEmpty) return null;
     final existing = await stepsOf(taskId);
-    final pos = await _nextPosition(existing.map((s) => s.position));
+    final pos = _nextPosition(existing.map((s) => s.position));
     return _create(
       entities.step,
       {'taskId': taskId, 'title': trimmed, 'position': pos},
@@ -392,9 +391,6 @@ class TodoRepository {
 
   Future<void> setStepDone(String id, {required bool done}) =>
       _mutate(entities.step, id, {'isDone': done});
-
-  Future<void> renameStep(String id, String title) =>
-      _mutate(entities.step, id, {'title': title});
 
   Future<void> deleteStep(String id) =>
       _mutate(entities.step, id, {'deleted': true});

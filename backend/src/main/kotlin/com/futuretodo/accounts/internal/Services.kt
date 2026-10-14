@@ -4,6 +4,8 @@ import com.futuretodo.accounts.UserDataContributor
 import com.futuretodo.accounts.UserDeleted
 import com.futuretodo.accounts.UserDirectory
 import com.futuretodo.shared.ApiException
+import com.futuretodo.shared.Roles
+import com.futuretodo.shared.SecureTokens
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -11,6 +13,7 @@ import org.springframework.boot.ApplicationArguments
 import org.springframework.boot.ApplicationRunner
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
+import org.springframework.mail.MailException
 import org.springframework.mail.SimpleMailMessage
 import org.springframework.mail.javamail.JavaMailSender
 import org.springframework.security.crypto.password.PasswordEncoder
@@ -22,10 +25,8 @@ import org.springframework.stereotype.Component
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.security.MessageDigest
-import java.security.SecureRandom
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
-import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -78,6 +79,16 @@ data class SessionDto(
 
 fun UserRecord.toProfile() = UserProfile(id, email, displayName, photoUrl, emailVerified, role, createdAt)
 
+/** Emails are stored and looked up trimmed and in lower case. */
+private fun normalizeEmail(raw: String): String = raw.trim().lowercase()
+
+/** A blocked account (FR-11) can neither log in nor refresh its tokens. */
+private fun requireNotBlocked(user: UserRecord) {
+    if (user.blocked) {
+        throw ApiException(HttpStatus.FORBIDDEN, "ACCOUNT_BLOCKED", "Account is blocked")
+    }
+}
+
 // ---------- Mail ----------
 
 @Service
@@ -94,8 +105,9 @@ class MailService(
     fun sendPasswordReset(to: String, token: String) =
         send(to, "Reset your Future Todo password", "Reset your password: $frontendUrl/reset-password?token=$token")
 
+    /** Best effort: a mail outage must not fail the request. The body holds secret links and is never logged. */
     private fun send(to: String, subject: String, text: String) {
-        log.info("Sending mail to={} subject='{}' body='{}'", to, subject, text)
+        log.info("Sending mail to={} subject='{}'", to, subject)
         try {
             val message = SimpleMailMessage()
             message.from = from
@@ -103,8 +115,8 @@ class MailService(
             message.subject = subject
             message.text = text
             sender.send(message)
-        } catch (e: Exception) {
-            log.warn("Could not send mail to {}: {}", to, e.message)
+        } catch (e: MailException) {
+            log.warn("Could not send mail to {}: {}", to, e.message, e)
         }
     }
 }
@@ -171,8 +183,6 @@ class SessionService(
     private val jwt: JwtService,
     @Value("\${app.jwt.refresh-ttl-days:30}") private val refreshTtlDays: Long,
 ) {
-    private val random = SecureRandom()
-
     fun open(user: UserRecord, deviceName: String?, platform: String?): TokenPair {
         val sessionId = UUID.randomUUID()
         val refreshToken = newRefreshToken()
@@ -191,9 +201,7 @@ class SessionService(
         }
         val user = users.findById(session.userId)
             ?: throw ApiException(HttpStatus.UNAUTHORIZED, "INVALID_REFRESH_TOKEN", "Refresh token is invalid")
-        if (user.blocked) {
-            throw ApiException(HttpStatus.FORBIDDEN, "ACCOUNT_BLOCKED", "Account is blocked")
-        }
+        requireNotBlocked(user)
         val newToken = newRefreshToken()
         sessions.rotate(session.id, hash(newToken), expiry())
         users.touchLastSeen(user.id)
@@ -222,11 +230,7 @@ class SessionService(
 
     private fun expiry(): OffsetDateTime = OffsetDateTime.now(ZoneOffset.UTC).plusDays(refreshTtlDays)
 
-    private fun newRefreshToken(): String {
-        val bytes = ByteArray(32)
-        random.nextBytes(bytes)
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
-    }
+    private fun newRefreshToken(): String = SecureTokens.urlSafe(SecureTokens.REFRESH_TOKEN_BYTES)
 
     companion object {
         fun hash(token: String): String =
@@ -246,13 +250,12 @@ class AuthService(
     private val limiter: LoginRateLimiter,
     private val oidc: OidcVerifier,
 ) {
-    private val random = SecureRandom()
     private val emailRegex = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
 
     @Transactional
     fun register(request: RegisterRequest, clientKey: String): UserProfile {
         limiter.check("register:$clientKey")
-        val email = request.email.trim().lowercase()
+        val email = normalizeEmail(request.email)
         if (!emailRegex.matches(email)) {
             throw ApiException(HttpStatus.BAD_REQUEST, "INVALID_EMAIL", "Email is not valid")
         }
@@ -261,26 +264,14 @@ class AuthService(
             throw ApiException(HttpStatus.CONFLICT, "EMAIL_TAKEN", "Email is already registered")
         }
         val name = request.displayName?.trim().takeUnless { it.isNullOrEmpty() } ?: email.substringBefore("@")
-        val user = UserRecord(
-            UUID.randomUUID(),
-            email,
-            encoder.encode(request.password),
-            name,
-            null,
-            false,
-            "USER",
-            false,
-            "{}",
-            OffsetDateTime.now(ZoneOffset.UTC),
-            null,
-        )
+        val user = UserRecord.newUser(email, encoder.encode(request.password), name, emailVerified = false)
         users.insert(user)
         sendVerification(user)
         return user.toProfile()
     }
 
     fun resendVerification(email: String) {
-        val user = users.findByEmail(email.trim().lowercase())
+        val user = users.findByEmail(normalizeEmail(email))
         if (user != null && !user.emailVerified) {
             sendVerification(user)
         }
@@ -288,16 +279,13 @@ class AuthService(
 
     @Transactional
     fun verifyEmail(token: String) {
-        val record = emailTokens.find(token, KIND_VERIFY)
-        if (record == null || record.used || record.expiresAt.isBefore(OffsetDateTime.now())) {
-            throw ApiException(HttpStatus.BAD_REQUEST, "INVALID_TOKEN", "Token is invalid or expired")
-        }
+        val record = consumableToken(token, KIND_VERIFY)
         users.markVerified(record.userId)
         emailTokens.markUsed(token)
     }
 
     fun login(request: LoginRequest, clientKey: String): TokenPair {
-        val email = request.email.trim().lowercase()
+        val email = normalizeEmail(request.email)
         limiter.check("login:$clientKey:$email")
         val user = users.findByEmail(email)
         val hash = user?.passwordHash
@@ -307,9 +295,7 @@ class AuthService(
         if (!user.emailVerified) {
             throw ApiException(HttpStatus.FORBIDDEN, "EMAIL_NOT_VERIFIED", "Confirm your email first")
         }
-        if (user.blocked) {
-            throw ApiException(HttpStatus.FORBIDDEN, "ACCOUNT_BLOCKED", "Account is blocked")
-        }
+        requireNotBlocked(user)
         return sessions.open(user, request.deviceName, request.platform)
     }
 
@@ -319,7 +305,7 @@ class AuthService(
 
     fun forgotPassword(email: String, clientKey: String) {
         limiter.check("forgot:$clientKey")
-        val user = users.findByEmail(email.trim().lowercase()) ?: return
+        val user = users.findByEmail(normalizeEmail(email)) ?: return
         val token = newToken()
         emailTokens.insert(token, user.id, KIND_RESET, OffsetDateTime.now(ZoneOffset.UTC).plusHours(1))
         mail.sendPasswordReset(user.email, token)
@@ -328,10 +314,7 @@ class AuthService(
     @Transactional
     fun resetPassword(token: String, newPassword: String) {
         validatePassword(newPassword)
-        val record = emailTokens.find(token, KIND_RESET)
-        if (record == null || record.used || record.expiresAt.isBefore(OffsetDateTime.now())) {
-            throw ApiException(HttpStatus.BAD_REQUEST, "INVALID_TOKEN", "Token is invalid or expired")
-        }
+        val record = consumableToken(token, KIND_RESET)
         users.updatePassword(record.userId, encoder.encode(newPassword))
         users.markVerified(record.userId)
         emailTokens.markUsed(token)
@@ -341,7 +324,7 @@ class AuthService(
     @Transactional
     fun oauthLogin(provider: String, request: OAuthRequest): TokenPair {
         val identity = oidc.verify(provider, request.idToken)
-        val email = identity.email?.trim()?.lowercase()
+        val email = identity.email?.let(::normalizeEmail)
             ?: throw ApiException(HttpStatus.BAD_REQUEST, "EMAIL_MISSING", "Provider did not return an email")
         var user = users.findByOAuth(provider, identity.subject)
         if (user == null) {
@@ -349,27 +332,22 @@ class AuthService(
             if (user != null) {
                 users.linkOAuth(user.id, provider, identity.subject)
             } else {
-                val created = UserRecord(
-                    UUID.randomUUID(),
-                    email,
-                    null,
-                    identity.name ?: email.substringBefore("@"),
-                    null,
-                    true,
-                    "USER",
-                    false,
-                    "{}",
-                    OffsetDateTime.now(ZoneOffset.UTC),
-                    null,
-                )
+                val created = UserRecord.newUser(email, null, identity.name ?: email.substringBefore("@"), emailVerified = true)
                 users.insert(created, provider, identity.subject)
                 user = created
             }
         }
-        if (user.blocked) {
-            throw ApiException(HttpStatus.FORBIDDEN, "ACCOUNT_BLOCKED", "Account is blocked")
-        }
+        requireNotBlocked(user)
         return sessions.open(user, request.deviceName, request.platform)
+    }
+
+    /** The email token of the given kind, if it exists, is unused and has not expired; 400 INVALID_TOKEN otherwise. */
+    private fun consumableToken(token: String, kind: String): EmailTokenRecord {
+        val record = emailTokens.find(token, kind)
+        if (record == null || record.used || record.expiresAt.isBefore(OffsetDateTime.now())) {
+            throw ApiException(HttpStatus.BAD_REQUEST, "INVALID_TOKEN", "Token is invalid or expired")
+        }
+        return record
     }
 
     private fun sendVerification(user: UserRecord) {
@@ -378,11 +356,7 @@ class AuthService(
         mail.sendVerification(user.email, token)
     }
 
-    private fun newToken(): String {
-        val bytes = ByteArray(24)
-        random.nextBytes(bytes)
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
-    }
+    private fun newToken(): String = SecureTokens.urlSafe(SecureTokens.EMAIL_TOKEN_BYTES)
 
     companion object {
         const val KIND_VERIFY = "VERIFY"
@@ -520,19 +494,7 @@ class AdminBootstrap(
             return
         }
         users.insert(
-            UserRecord(
-                UUID.randomUUID(),
-                email.lowercase(),
-                encoder.encode(password),
-                "Administrator",
-                null,
-                true,
-                "ADMIN",
-                false,
-                "{}",
-                OffsetDateTime.now(ZoneOffset.UTC),
-                null,
-            ),
+            UserRecord.newUser(email.lowercase(), encoder.encode(password), "Administrator", emailVerified = true, role = Roles.ADMIN),
         )
     }
 }

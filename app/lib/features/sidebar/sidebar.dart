@@ -45,9 +45,8 @@ class Sidebar extends ConsumerWidget {
     final selected = ref.watch(selectedViewProvider);
     final lists = ref.watch(listsProvider).valueOrNull ?? const <TaskList>[];
     final groups = ref.watch(groupsProvider).valueOrNull ?? const <ListGroup>[];
-    final tasks = ref.watch(tasksProvider).valueOrNull ?? const <Task>[];
-    final signedIn = ref.watch(authProvider).signedIn;
     final repo = ref.read(repositoryProvider);
+    void select(ViewSelection view) => _select(ref, view);
 
     final top = <_TopItem>[
       for (final g in groups) _TopItem.group(g),
@@ -55,96 +54,12 @@ class Sidebar extends ConsumerWidget {
         _TopItem.list(li),
     ]..sort((a, b) => a.position.compareTo(b.position));
 
-    int openCount(String listId) =>
-        tasks.where((t) => t.listId == listId && !t.isCompleted).length;
-
-    Widget listTile(TaskList list, {double indent = 0}) => ListTile(
-          key: ValueKey('list-${list.id}'),
-          contentPadding: EdgeInsets.only(left: 16 + indent, right: 4),
-          dense: true,
-          selected: selected.listId == list.id,
-          leading: list.icon != null
-              ? Text(list.icon!, style: const TextStyle(fontSize: 20))
-              : Icon(list.isShared ? Icons.people_outline : Icons.list),
-          title: Text(list.name, overflow: TextOverflow.ellipsis),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('${openCount(list.id)}'),
-              _ListMenu(list: list, groups: groups),
-            ],
-          ),
-          onTap: () => _select(ref, ViewSelection.list(list.id)),
-        );
-
-    Widget groupTile(ListGroup group) {
-      final children = lists.where((li) => li.groupId == group.id).toList();
-      return ExpansionTile(
-        key: ValueKey('group-${group.id}'),
-        initiallyExpanded: true,
-        leading: const Icon(Icons.folder_outlined),
-        title: Row(
-          children: [
-            Expanded(child: Text(group.name, overflow: TextOverflow.ellipsis)),
-            PopupMenuButton<String>(
-              tooltip: '',
-              onSelected: (v) async {
-                if (v == 'rename') {
-                  final name = await promptText(
-                    context,
-                    title: l.rename,
-                    initial: group.name,
-                  );
-                  if (name != null) await repo.renameGroup(group.id, name);
-                } else {
-                  await repo.ungroup(group.id);
-                }
-              },
-              itemBuilder: (_) => [
-                PopupMenuItem(value: 'rename', child: Text(l.rename)),
-                PopupMenuItem(value: 'ungroup', child: Text(l.ungroup)),
-              ],
-            ),
-          ],
-        ),
-        children: [for (final li in children) listTile(li, indent: 16)],
-      );
-    }
-
     return Material(
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: SafeArea(
         child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      l.appTitle,
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                  ),
-                  const SyncIndicatorIcon(),
-                  IconButton(
-                    key: const Key('open-settings'),
-                    tooltip: l.settings,
-                    icon: const Icon(Icons.settings_outlined),
-                    onPressed: () => showSettingsDialog(context),
-                  ),
-                  IconButton(
-                    key: const Key('open-account'),
-                    tooltip: signedIn ? l.profile : l.signIn,
-                    icon: Icon(
-                      signedIn ? Icons.account_circle : Icons.login,
-                    ),
-                    onPressed: () =>
-                        context.push(signedIn ? '/profile' : '/login'),
-                  ),
-                ],
-              ),
-            ),
+            const _SidebarHeader(),
             Padding(
               padding: const EdgeInsets.all(8),
               child: TextField(
@@ -169,7 +84,7 @@ class Sidebar extends ConsumerWidget {
                       selected: selected.smart == s,
                       leading: Icon(smartListIcon(s)),
                       title: Text(smartListLabel(l, s)),
-                      onTap: () => _select(ref, ViewSelection.smart(s)),
+                      onTap: () => select(ViewSelection.smart(s)),
                     ),
                   const Divider(),
                   ReorderableListView.builder(
@@ -192,8 +107,20 @@ class Sidebar extends ConsumerWidget {
                         key: ValueKey('top-${item.id}'),
                         index: i,
                         child: item.group != null
-                            ? groupTile(item.group!)
-                            : listTile(item.list!),
+                            ? _GroupTile(
+                                group: item.group!,
+                                lists: [
+                                  for (final li in lists)
+                                    if (li.groupId == item.group!.id) li,
+                                ],
+                                groups: groups,
+                                onSelect: select,
+                              )
+                            : _ListTile(
+                                list: item.list!,
+                                groups: groups,
+                                onSelect: select,
+                              ),
                       );
                     },
                   ),
@@ -201,49 +128,238 @@ class Sidebar extends ConsumerWidget {
               ),
             ),
             const Divider(height: 1),
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton.icon(
-                    key: const Key('new-list'),
-                    icon: const Icon(Icons.add),
-                    label: Text(l.newList),
-                    onPressed: () async {
-                      final name = await promptText(
-                        context,
-                        title: l.newList,
-                        hint: l.listName,
-                      );
-                      if (name == null) return;
-                      final id = await repo.createList(
-                        name,
-                        ownerId: ref.read(authProvider).user?.id,
-                      );
-                      _select(ref, ViewSelection.list(id));
-                    },
-                  ),
-                ),
-                IconButton(
-                  key: const Key('new-group'),
-                  tooltip: l.newGroup,
-                  icon: const Icon(Icons.create_new_folder_outlined),
-                  onPressed: () async {
-                    final name = await promptText(
-                      context,
-                      title: l.newGroup,
-                      hint: l.groupName,
-                    );
-                    if (name != null) await repo.createGroup(name);
-                  },
-                ),
-              ],
-            ),
+            _SidebarFooter(onSelect: select),
           ],
         ),
       ),
     );
   }
 }
+
+/// App title, sync state, settings and account buttons.
+class _SidebarHeader extends ConsumerWidget {
+  const _SidebarHeader();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l = AppLocalizations.of(context);
+    final signedIn = ref.watch(authProvider).signedIn;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              l.appTitle,
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+          ),
+          const SyncIndicatorIcon(),
+          IconButton(
+            key: const Key('open-settings'),
+            tooltip: l.settings,
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => showSettingsDialog(context),
+          ),
+          IconButton(
+            key: const Key('open-account'),
+            tooltip: signedIn ? l.profile : l.signIn,
+            icon: Icon(signedIn ? Icons.account_circle : Icons.login),
+            onPressed: () => context.push(signedIn ? '/profile' : '/login'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "New list" and "New group" buttons.
+class _SidebarFooter extends ConsumerWidget {
+  const _SidebarFooter({required this.onSelect});
+
+  final ValueChanged<ViewSelection> onSelect;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l = AppLocalizations.of(context);
+    final repo = ref.read(repositoryProvider);
+    return Row(
+      children: [
+        Expanded(
+          child: TextButton.icon(
+            key: const Key('new-list'),
+            icon: const Icon(Icons.add),
+            label: Text(l.newList),
+            onPressed: () async {
+              final name = await promptText(
+                context,
+                title: l.newList,
+                hint: l.listName,
+              );
+              if (name == null) return;
+              final id = await repo.createList(
+                name,
+                ownerId: ref.read(authProvider).user?.id,
+              );
+              onSelect(ViewSelection.list(id));
+            },
+          ),
+        ),
+        IconButton(
+          key: const Key('new-group'),
+          tooltip: l.newGroup,
+          icon: const Icon(Icons.create_new_folder_outlined),
+          onPressed: () async {
+            final name = await promptText(
+              context,
+              title: l.newGroup,
+              hint: l.groupName,
+            );
+            if (name != null) await repo.createGroup(name);
+          },
+        ),
+      ],
+    );
+  }
+}
+
+/// One list: icon, name, number of open tasks and its menu.
+class _ListTile extends ConsumerWidget {
+  const _ListTile({
+    required this.list,
+    required this.groups,
+    required this.onSelect,
+    this.indent = 0,
+  });
+
+  final TaskList list;
+  final List<ListGroup> groups;
+  final ValueChanged<ViewSelection> onSelect;
+  final double indent;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selected = ref.watch(selectedViewProvider).listId == list.id;
+    final tasks = ref.watch(tasksProvider).valueOrNull ?? const <Task>[];
+    final openCount =
+        tasks.where((t) => t.listId == list.id && !t.isCompleted).length;
+    return ListTile(
+      key: ValueKey('list-${list.id}'),
+      contentPadding: EdgeInsets.only(left: 16 + indent, right: 4),
+      dense: true,
+      selected: selected,
+      leading: list.icon != null
+          ? Text(list.icon!, style: const TextStyle(fontSize: 20))
+          : Icon(list.isShared ? Icons.people_outline : Icons.list),
+      title: Text(list.name, overflow: TextOverflow.ellipsis),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('$openCount'),
+          _ListMenu(list: list, groups: groups),
+        ],
+      ),
+      onTap: () => onSelect(ViewSelection.list(list.id)),
+    );
+  }
+}
+
+enum _GroupAction { rename, ungroup }
+
+/// A group of lists (FR-2.3), expanded, with its rename/ungroup menu.
+class _GroupTile extends ConsumerWidget {
+  const _GroupTile({
+    required this.group,
+    required this.lists,
+    required this.groups,
+    required this.onSelect,
+  });
+
+  final ListGroup group;
+
+  /// The lists in this group.
+  final List<TaskList> lists;
+  final List<ListGroup> groups;
+  final ValueChanged<ViewSelection> onSelect;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l = AppLocalizations.of(context);
+    final repo = ref.read(repositoryProvider);
+    return ExpansionTile(
+      key: ValueKey('group-${group.id}'),
+      initiallyExpanded: true,
+      leading: const Icon(Icons.folder_outlined),
+      title: Row(
+        children: [
+          Expanded(child: Text(group.name, overflow: TextOverflow.ellipsis)),
+          _ActionMenu<_GroupAction>(
+            actions: _GroupAction.values,
+            label: (action) => switch (action) {
+              _GroupAction.rename => l.rename,
+              _GroupAction.ungroup => l.ungroup,
+            },
+            onSelected: (action) async {
+              switch (action) {
+                case _GroupAction.rename:
+                  final name = await promptText(
+                    context,
+                    title: l.rename,
+                    initial: group.name,
+                  );
+                  if (name != null) await repo.renameGroup(group.id, name);
+                case _GroupAction.ungroup:
+                  await repo.ungroup(group.id);
+              }
+            },
+          ),
+        ],
+      ),
+      children: [
+        for (final li in lists)
+          _ListTile(list: li, groups: groups, onSelect: onSelect, indent: 16),
+      ],
+    );
+  }
+}
+
+/// The "more" popup menu of a sidebar item, with one entry per action.
+class _ActionMenu<T extends Enum> extends StatelessWidget {
+  const _ActionMenu({
+    required this.actions,
+    required this.label,
+    required this.onSelected,
+    this.menuKey,
+    this.itemKey,
+  });
+
+  final List<T> actions;
+  final String Function(T action) label;
+  final void Function(T action) onSelected;
+
+  /// Key of the menu button itself.
+  final Key? menuKey;
+  final Key? Function(T action)? itemKey;
+
+  @override
+  Widget build(BuildContext context) => PopupMenuButton<T>(
+        key: menuKey,
+        // An empty tooltip turns off the default "Show menu" tooltip, which
+        // would otherwise pop up over the sidebar rows.
+        tooltip: '',
+        onSelected: onSelected,
+        itemBuilder: (_) => [
+          for (final action in actions)
+            PopupMenuItem(
+              key: itemKey?.call(action),
+              value: action,
+              child: Text(label(action)),
+            ),
+        ],
+      );
+}
+
+enum _ListAction { rename, icon, group, share, delete }
 
 class _ListMenu extends ConsumerWidget {
   const _ListMenu({required this.list, required this.groups});
@@ -255,16 +371,25 @@ class _ListMenu extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l = AppLocalizations.of(context);
     final repo = ref.read(repositoryProvider);
-    return PopupMenuButton<String>(
-      key: Key('list-menu-${list.id}'),
-      tooltip: '',
-      onSelected: (v) async {
-        switch (v) {
-          case 'rename':
+    return _ActionMenu<_ListAction>(
+      menuKey: Key('list-menu-${list.id}'),
+      actions: _ListAction.values,
+      label: (action) => switch (action) {
+        _ListAction.rename => l.rename,
+        _ListAction.icon => l.listIcon,
+        _ListAction.group => l.moveToGroup,
+        _ListAction.share => l.share,
+        _ListAction.delete => l.delete,
+      },
+      itemKey: (action) =>
+          action == _ListAction.delete ? Key('delete-list-${list.id}') : null,
+      onSelected: (action) async {
+        switch (action) {
+          case _ListAction.rename:
             final name =
                 await promptText(context, title: l.rename, initial: list.name);
             if (name != null) await repo.renameList(list.id, name);
-          case 'icon':
+          case _ListAction.icon:
             final icon = await promptText(
               context,
               title: l.listIcon,
@@ -272,7 +397,7 @@ class _ListMenu extends ConsumerWidget {
               maxLength: 8,
             );
             if (icon != null) await repo.setListIcon(list.id, icon);
-          case 'group':
+          case _ListAction.group:
             if (!context.mounted) return;
             final choice = await _pickGroup(context);
             if (choice != null) {
@@ -281,10 +406,10 @@ class _ListMenu extends ConsumerWidget {
                 choice == '' ? null : choice,
               );
             }
-          case 'share':
+          case _ListAction.share:
             if (!context.mounted) return;
             await showShareDialog(context, list);
-          case 'delete':
+          case _ListAction.delete:
             if (!context.mounted) return;
             final ok = await showDialog<bool>(
               context: context,
@@ -313,17 +438,6 @@ class _ListMenu extends ConsumerWidget {
             }
         }
       },
-      itemBuilder: (_) => [
-        PopupMenuItem(value: 'rename', child: Text(l.rename)),
-        PopupMenuItem(value: 'icon', child: Text(l.listIcon)),
-        PopupMenuItem(value: 'group', child: Text(l.moveToGroup)),
-        PopupMenuItem(value: 'share', child: Text(l.share)),
-        PopupMenuItem(
-          key: Key('delete-list-${list.id}'),
-          value: 'delete',
-          child: Text(l.delete),
-        ),
-      ],
     );
   }
 

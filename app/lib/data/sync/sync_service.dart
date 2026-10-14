@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:future_todo/core/hlc.dart';
 import 'package:future_todo/core/lww.dart';
@@ -113,7 +112,7 @@ class SyncService {
         ...entity.defaults,
         ...change.fields,
         'id': change.id,
-        'clocks': jsonEncode(change.clocks),
+        'clocks': encodeClocks(change.clocks),
         'dirty': false,
       });
       return;

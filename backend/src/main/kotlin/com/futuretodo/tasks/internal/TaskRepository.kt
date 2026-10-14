@@ -14,6 +14,35 @@ private const val TASK_COLS = "t.id, t.list_id, t.title, t.note, t.completed, t.
     "t.reminder_at, t.repeat_type, t.repeat_interval, t.repeat_days, t.my_day_date, t.assignee_id, t.position, " +
     "t.created_at, t.deleted, t.clocks"
 
+private const val OWN_OR_ASSIGNED = "(l.owner_id = :user OR t.assignee_id = :user)"
+
+/**
+ * The constant SQL filter and sort order of every smart list (FR-4). Columns use the aliases `t` (task) and `l` (list);
+ * `:user` and `:today` are bound by [TaskRepository.smartList].
+ */
+enum class SmartListQuery(val path: String?, val condition: String, val order: String) {
+    MY_DAY("my-day", "t.my_day_date = :today AND $OWN_OR_ASSIGNED", "t.position, t.created_at"),
+    IMPORTANT("important", "t.important", "t.completed, t.created_at DESC"),
+    PLANNED("planned", "t.due_date IS NOT NULL AND NOT t.completed", "t.due_date, t.created_at"),
+    ASSIGNED_TO_ME("assigned-to-me", "t.assignee_id = :user", "t.completed, t.created_at DESC"),
+    ALL("all", "TRUE", "t.created_at DESC"),
+    COMPLETED("completed", "t.completed", "t.completed_at DESC NULLS LAST"),
+
+    /** Not a smart list of its own: the "add to My Day" suggestions served by /smart-lists/my-day/suggestions. */
+    MY_DAY_SUGGESTIONS(
+        null,
+        "NOT t.completed AND (t.my_day_date IS NULL OR t.my_day_date <> :today) " +
+            "AND (t.due_date <= :today OR t.my_day_date < :today) AND $OWN_OR_ASSIGNED",
+        "t.due_date NULLS LAST",
+    ),
+    ;
+
+    companion object {
+        /** The smart list behind /smart-lists/{path}, or null when there is none. */
+        fun byPath(path: String): SmartListQuery? = entries.firstOrNull { it.path == path }
+    }
+}
+
 @Repository
 class TaskRepository(private val jdbc: NamedParameterJdbcTemplate, private val json: ObjectMapper) {
     private fun clocksOf(text: String): Map<String, String> = json.readValue(text)
@@ -239,8 +268,12 @@ class TaskRepository(private val jdbc: NamedParameterJdbcTemplate, private val j
         )
     }
 
+    /** Tasks of the given lists that are in the smart list [query] of [user] on the user's local date [today]. */
+    fun smartList(query: SmartListQuery, listIds: Collection<UUID>, user: UUID, today: LocalDate): List<TaskDto> =
+        smart(listIds, query.condition, mapOf("today" to today, "user" to user), query.order)
+
     /** Tasks of the given lists (lists must not be deleted) that match a constant SQL condition. */
-    fun smart(listIds: Collection<UUID>, condition: String, params: Map<String, Any?>, order: String): List<TaskDto> {
+    private fun smart(listIds: Collection<UUID>, condition: String, params: Map<String, Any?>, order: String): List<TaskDto> {
         if (listIds.isEmpty()) {
             return emptyList()
         }

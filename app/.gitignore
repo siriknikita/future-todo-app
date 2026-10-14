@@ -5,3 +5,16 @@ coverage/
 .flutter-plugins
 .flutter-plugins-dependencies
 pubspec.lock
+
+# Generated code (build_runner / flutter gen-l10n); regenerated in CI and the Dockerfile
+*.g.dart
+lib/l10n/app_localizations*.dart
+
+# Produced by `flutter create . --platforms web`; only web/index.html and web/manifest.json are committed
+.metadata
+web/icons/
+web/favicon.png
+
+# Drift web assets, downloaded in CI and the Dockerfile
+web/sqlite3.wasm
+web/drift_worker.js

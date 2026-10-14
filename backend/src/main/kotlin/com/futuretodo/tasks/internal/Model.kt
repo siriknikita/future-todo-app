@@ -127,6 +127,18 @@ object EntitySpecs {
         ),
     )
 
+    /** The next occurrence of a repeating task starts open, outside My Day and not deleted (FR-3.6). */
+    private val taskFieldsNotCopied = setOf("completed", "completedAt", "myDayDate", "deleted")
+
+    /** A copied step belongs to the new task and starts open. */
+    private val stepFieldsNotCopied = setOf("taskId", "completed", "deleted")
+
+    /** Fields the next occurrence of a repeating task takes over from the completed one. */
+    val TASK_OCCURRENCE_FIELDS: Set<String> = TASK.fields.keys - taskFieldsNotCopied
+
+    /** Fields copied with each step into the next occurrence. */
+    val STEP_OCCURRENCE_FIELDS: Set<String> = STEP.fields.keys - stepFieldsNotCopied
+
     private val all = listOf(GROUP, LIST, TASK, STEP)
 
     fun byType(type: String): EntitySpec? = all.firstOrNull { it.type == type }

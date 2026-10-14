@@ -3,6 +3,7 @@ package com.futuretodo.accounts.internal
 import com.futuretodo.accounts.TokenVerifier
 import com.futuretodo.shared.ApiException
 import com.futuretodo.shared.AuthUser
+import com.futuretodo.shared.Roles
 import io.github.bucket4j.Bandwidth
 import io.github.bucket4j.Bucket
 import io.jsonwebtoken.JwtException
@@ -157,7 +158,7 @@ class SecurityConfig(
                         "/error",
                     ).permitAll()
                     .requestMatchers("/api/v1/admin/**")
-                    .hasRole("ADMIN")
+                    .hasRole(Roles.ADMIN)
                     .anyRequest()
                     .authenticated()
             }.addFilterBefore(JwtAuthFilter(jwtService), UsernamePasswordAuthenticationFilter::class.java)

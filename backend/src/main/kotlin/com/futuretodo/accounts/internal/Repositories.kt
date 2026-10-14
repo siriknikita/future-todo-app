@@ -1,9 +1,11 @@
 package com.futuretodo.accounts.internal
 
+import com.futuretodo.shared.Roles
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.RowMapper
 import org.springframework.stereotype.Repository
 import java.time.OffsetDateTime
+import java.time.ZoneOffset
 import java.util.UUID
 
 data class UserRecord(
@@ -18,7 +20,30 @@ data class UserRecord(
     val settings: String,
     val createdAt: OffsetDateTime,
     val lastSeenAt: OffsetDateTime?,
-)
+) {
+    companion object {
+        /** A new account: fresh id, no photo, not blocked, default settings, created now and never seen. */
+        fun newUser(
+            email: String,
+            passwordHash: String?,
+            displayName: String,
+            emailVerified: Boolean,
+            role: String = Roles.USER,
+        ) = UserRecord(
+            id = UUID.randomUUID(),
+            email = email,
+            passwordHash = passwordHash,
+            displayName = displayName,
+            photoUrl = null,
+            emailVerified = emailVerified,
+            role = role,
+            blocked = false,
+            settings = "{}",
+            createdAt = OffsetDateTime.now(ZoneOffset.UTC),
+            lastSeenAt = null,
+        )
+    }
+}
 
 data class SessionRecord(
     val id: UUID,
