@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:future_todo/core/limits.dart';
 import 'package:future_todo/features/common/widgets.dart';
 import 'package:future_todo/l10n/app_localizations.dart';
 import 'package:future_todo/providers.dart';
@@ -13,7 +14,31 @@ String? _validateEmail(AppLocalizations l, String? v) {
 }
 
 String? _validatePassword(AppLocalizations l, String? v) =>
-    (v ?? '').length >= 8 ? null : l.passwordTooShort;
+    (v ?? '').length >= minPasswordLength ? null : l.passwordTooShort;
+
+/// Runs a form's server call: marks the page busy (its submit button is
+/// disabled meanwhile), ignores repeated submits, and shows any error as
+/// "<generic error>: <details>".
+mixin _GuardedSubmit<T extends StatefulWidget> on State<T> {
+  bool _busy = false;
+
+  Future<void> _runGuarded(Future<void> Function() action) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await action();
+    } on Object catch (e) {
+      if (mounted) {
+        showMessage(
+          context,
+          '${AppLocalizations.of(context).errorGeneric}: $e',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+}
 
 class _AuthScaffold extends StatelessWidget {
   const _AuthScaffold({required this.title, required this.child});
@@ -49,11 +74,11 @@ class LoginPage extends ConsumerStatefulWidget {
   ConsumerState<LoginPage> createState() => _LoginPageState();
 }
 
-class _LoginPageState extends ConsumerState<LoginPage> {
+class _LoginPageState extends ConsumerState<LoginPage>
+    with _GuardedSubmit<LoginPage> {
   final _form = GlobalKey<FormState>();
   final _email = TextEditingController();
   final _password = TextEditingController();
-  bool _busy = false;
 
   @override
   void dispose() {
@@ -64,22 +89,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   Future<void> _submit() async {
     if (!_form.currentState!.validate()) return;
-    setState(() => _busy = true);
-    try {
+    await _runGuarded(() async {
       await ref
           .read(authProvider.notifier)
           .login(_email.text.trim(), _password.text);
       if (mounted) context.go('/');
-    } on Object catch (e) {
-      if (mounted) {
-        showMessage(
-          context,
-          '${AppLocalizations.of(context).errorGeneric}: $e',
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    });
   }
 
   @override
@@ -135,12 +150,12 @@ class RegisterPage extends ConsumerStatefulWidget {
   ConsumerState<RegisterPage> createState() => _RegisterPageState();
 }
 
-class _RegisterPageState extends ConsumerState<RegisterPage> {
+class _RegisterPageState extends ConsumerState<RegisterPage>
+    with _GuardedSubmit<RegisterPage> {
   final _form = GlobalKey<FormState>();
   final _name = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
-  bool _busy = false;
   bool _sent = false;
 
   @override
@@ -153,24 +168,14 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
 
   Future<void> _submit() async {
     if (!_form.currentState!.validate()) return;
-    setState(() => _busy = true);
-    try {
+    await _runGuarded(() async {
       await ref.read(authProvider.notifier).register(
             email: _email.text.trim(),
             password: _password.text,
             name: _name.text.trim().isEmpty ? null : _name.text.trim(),
           );
       if (mounted) setState(() => _sent = true);
-    } on Object catch (e) {
-      if (mounted) {
-        showMessage(
-          context,
-          '${AppLocalizations.of(context).errorGeneric}: $e',
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    });
   }
 
   @override
@@ -236,7 +241,8 @@ class ForgotPasswordPage extends ConsumerStatefulWidget {
   ConsumerState<ForgotPasswordPage> createState() => _ForgotPasswordPageState();
 }
 
-class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
+class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage>
+    with _GuardedSubmit<ForgotPasswordPage> {
   final _form = GlobalKey<FormState>();
   final _email = TextEditingController();
   bool _sent = false;
@@ -249,19 +255,12 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
 
   Future<void> _submit() async {
     if (!_form.currentState!.validate()) return;
-    try {
+    await _runGuarded(() async {
       await ref
           .read(authProvider.notifier)
           .requestPasswordReset(_email.text.trim());
       if (mounted) setState(() => _sent = true);
-    } on Object catch (e) {
-      if (mounted) {
-        showMessage(
-          context,
-          '${AppLocalizations.of(context).errorGeneric}: $e',
-        );
-      }
-    }
+    });
   }
 
   @override
@@ -284,7 +283,7 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
                   const SizedBox(height: 16),
                   FilledButton(
                     key: const Key('reset-submit'),
-                    onPressed: _submit,
+                    onPressed: _busy ? null : _submit,
                     child: Text(l.sendResetLink),
                   ),
                 ],
@@ -304,7 +303,8 @@ class ResetPasswordPage extends ConsumerStatefulWidget {
   ConsumerState<ResetPasswordPage> createState() => _ResetPasswordPageState();
 }
 
-class _ResetPasswordPageState extends ConsumerState<ResetPasswordPage> {
+class _ResetPasswordPageState extends ConsumerState<ResetPasswordPage>
+    with _GuardedSubmit<ResetPasswordPage> {
   final _form = GlobalKey<FormState>();
   final _password = TextEditingController();
   bool _done = false;
@@ -317,19 +317,12 @@ class _ResetPasswordPageState extends ConsumerState<ResetPasswordPage> {
 
   Future<void> _submit() async {
     if (!_form.currentState!.validate()) return;
-    try {
+    await _runGuarded(() async {
       await ref
           .read(authProvider.notifier)
           .resetPassword(widget.token ?? '', _password.text);
       if (mounted) setState(() => _done = true);
-    } on Object catch (e) {
-      if (mounted) {
-        showMessage(
-          context,
-          '${AppLocalizations.of(context).errorGeneric}: $e',
-        );
-      }
-    }
+    });
   }
 
   @override
@@ -361,7 +354,7 @@ class _ResetPasswordPageState extends ConsumerState<ResetPasswordPage> {
                   const SizedBox(height: 16),
                   FilledButton(
                     key: const Key('new-password-submit'),
-                    onPressed: _submit,
+                    onPressed: _busy ? null : _submit,
                     child: Text(l.save),
                   ),
                 ],
@@ -429,7 +422,8 @@ class ProfilePage extends ConsumerStatefulWidget {
   ConsumerState<ProfilePage> createState() => _ProfilePageState();
 }
 
-class _ProfilePageState extends ConsumerState<ProfilePage> {
+class _ProfilePageState extends ConsumerState<ProfilePage>
+    with _GuardedSubmit<ProfilePage> {
   late final TextEditingController _name;
   final _current = TextEditingController();
   final _new = TextEditingController();
@@ -451,20 +445,20 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
 
   Future<void> _save() async {
     final l = AppLocalizations.of(context);
-    if (_new.text.isNotEmpty && _new.text.length < 8) {
-      showMessage(context, l.passwordTooShort);
+    final passwordError =
+        _new.text.isEmpty ? null : _validatePassword(l, _new.text);
+    if (passwordError != null) {
+      showMessage(context, passwordError);
       return;
     }
-    try {
+    await _runGuarded(() async {
       await ref.read(authProvider.notifier).updateProfile(
             name: _name.text.trim(),
             currentPassword: _new.text.isEmpty ? null : _current.text,
             newPassword: _new.text.isEmpty ? null : _new.text,
           );
       if (mounted) showMessage(context, l.profileSaved);
-    } on Object catch (e) {
-      if (mounted) showMessage(context, '${l.errorGeneric}: $e');
-    }
+    });
   }
 
   @override
@@ -498,7 +492,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           const SizedBox(height: 16),
           FilledButton(
             key: const Key('profile-save'),
-            onPressed: _save,
+            onPressed: _busy ? null : _save,
             child: Text(l.save),
           ),
           TextButton(

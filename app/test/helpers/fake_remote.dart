@@ -17,6 +17,9 @@ class FakeRemoteApi implements RemoteApi {
   bool failRemoveMember = false;
   bool failJoin = false;
 
+  /// Makes password reset and profile calls fail with 'Server down'.
+  bool failAccount = false;
+
   /// Lists returned as `accessibleListIds`; null means "not reported".
   List<String>? accessible;
 
@@ -98,18 +101,23 @@ class FakeRemoteApi implements RemoteApi {
   Future<void> verifyEmail(String token) async => calls.add('verify:$token');
 
   @override
-  Future<void> requestPasswordReset(String email) async =>
-      calls.add('forgot:$email');
+  Future<void> requestPasswordReset(String email) async {
+    if (failAccount) throw const ApiException('Server down');
+    calls.add('forgot:$email');
+  }
 
   @override
   Future<void> resetPassword({
     required String token,
     required String newPassword,
-  }) async =>
-      calls.add('reset:$token');
+  }) async {
+    if (failAccount) throw const ApiException('Server down');
+    calls.add('reset:$token');
+  }
 
   @override
   Future<AuthUser> updateProfile({String? name}) async {
+    if (failAccount) throw const ApiException('Server down');
     calls.add('profile:$name');
     return AuthUser(id: 'user-1', email: loginEmail ?? 'a@b.c', name: name);
   }
