@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:future_todo/core/pref_keys.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/pump_app.dart';
 
@@ -95,11 +97,11 @@ void main() {
     final h = await pumpApp(
       tester,
       prefs: {
-        'auth.access': 'a',
-        'auth.refresh': 'r',
-        'auth.userId': 'user-1',
-        'auth.email': 'me@x.co',
-        'auth.name': 'Me',
+        PrefKeys.accessToken: 'a',
+        PrefKeys.refreshToken: 'r',
+        PrefKeys.userId: 'user-1',
+        PrefKeys.userEmail: 'me@x.co',
+        PrefKeys.userName: 'Me',
       },
     );
     await tester.tap(find.byKey(const Key('open-account')));
@@ -114,6 +116,8 @@ void main() {
     await tester.tap(find.byKey(const Key('sign-out')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('sync-guest')), findsOneWidget);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getKeys().intersection(PrefKeys.authKeys.toSet()), isEmpty);
 
     await disposeApp(tester, h);
   });

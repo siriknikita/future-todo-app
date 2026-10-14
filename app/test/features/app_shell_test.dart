@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:future_todo/core/pref_keys.dart';
 
 import '../helpers/pump_app.dart';
 
@@ -50,7 +51,7 @@ void main() {
   });
 
   testWidgets('saved language preference is applied at start', (tester) async {
-    final h = await pumpApp(tester, prefs: {'language': 'uk'});
+    final h = await pumpApp(tester, prefs: {PrefKeys.language: 'uk'});
     expect(find.text('Важливе'), findsOneWidget);
     await disposeApp(tester, h);
   });
