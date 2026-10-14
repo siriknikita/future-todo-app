@@ -73,6 +73,7 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
                   label: Text(l.createInviteLink),
                   onPressed: () => _run(() async {
                     final link = await sharing.createInviteLink(list.id);
+                    if (!context.mounted) return;
                     setState(() => _link = link);
                   }),
                 ),
@@ -91,8 +92,9 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
                   key: const Key('revoke-invites'),
                   onPressed: () => _run(() async {
                     await sharing.revokeInvites(list.id);
+                    if (!context.mounted) return;
                     setState(() => _link = null);
-                    if (context.mounted) showMessage(context, l.linksRevoked);
+                    showMessage(context, l.linksRevoked);
                   }),
                   child: Text(l.revokeLinks),
                 ),

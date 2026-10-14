@@ -310,6 +310,7 @@ class _AddStepFieldState extends ConsumerState<_AddStepField> {
       ),
       onSubmitted: (v) async {
         await ref.read(repositoryProvider).addStep(widget.taskId, v);
+        if (!mounted) return;
         _controller.clear();
       },
     );
