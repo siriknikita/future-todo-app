@@ -57,21 +57,22 @@ class ChangeService(
     // ---- authorization ----
 
     private fun authorize(userId: UUID, spec: EntitySpec, id: UUID, fields: Map<String, FieldChange>, exists: Boolean) {
-        when (spec.type) {
-            "group" -> if (exists && repo.findGroup(id)?.ownerId != userId) throw notFound("Group")
-            "list" -> if (exists) {
+        when (spec) {
+            EntitySpecs.GROUP -> if (exists && repo.findGroup(id)?.ownerId != userId) throw notFound("Group")
+            EntitySpecs.LIST -> if (exists) {
                 when (access.roleOf(id, userId)) {
                     null -> throw notFound("List")
                     ListRole.MEMBER -> throw ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Only the owner can change the list")
                     ListRole.OWNER -> Unit
                 }
             }
-            "task" -> authorizeTask(userId, id, fields, !exists)
-            "step" -> {
+            EntitySpecs.TASK -> authorizeTask(userId, id, fields, !exists)
+            EntitySpecs.STEP -> {
                 val taskId = if (exists) repo.taskIdOfStep(id) else uuid(fields["taskId"]?.value, "taskId")
                 val listId = taskId?.let { repo.listIdOfTask(it) } ?: throw notFound("Task")
                 guard.requireMember(listId, userId)
             }
+            else -> unsupported(spec)
         }
     }
 
@@ -97,6 +98,9 @@ class ChangeService(
         }
     }
 
+    /** Every spec of [EntitySpecs] has its own branch; reaching this is a programming error, not a bad request. */
+    private fun unsupported(spec: EntitySpec): Nothing = error("Entity type ${spec.type} is not handled by ChangeService")
+
     private fun uuid(value: Any?, field: String): UUID =
         try {
             UUID.fromString(value.toString())
@@ -107,14 +111,15 @@ class ChangeService(
     // ---- create / update ----
 
     private fun create(userId: UUID, spec: EntitySpec, id: UUID, fields: Map<String, FieldChange>) {
-        when (spec.type) {
-            "group" -> repo.insertGroup(id, userId)
-            "list" -> {
+        when (spec) {
+            EntitySpecs.GROUP -> repo.insertGroup(id, userId)
+            EntitySpecs.LIST -> {
                 repo.insertList(id, userId)
                 access.registerOwner(id, userId)
             }
-            "task" -> repo.insertTask(id, uuid(fields["listId"]?.value, "listId"))
-            else -> repo.insertStep(id, uuid(fields["taskId"]?.value, "taskId"))
+            EntitySpecs.TASK -> repo.insertTask(id, uuid(fields["listId"]?.value, "listId"))
+            EntitySpecs.STEP -> repo.insertStep(id, uuid(fields["taskId"]?.value, "taskId"))
+            else -> unsupported(spec)
         }
     }
 
@@ -135,38 +140,25 @@ class ChangeService(
     // ---- side effects ----
 
     private fun afterApply(userId: UUID, spec: EntitySpec, id: UUID, accepted: Map<String, FieldChange>, before: TaskDto?) {
-        val payload: Any
-        val listId: UUID?
-        val deleted: Boolean
-        when (spec.type) {
-            "group" -> {
-                val group = repo.findGroup(id)!!
-                payload = group
-                listId = null
-                deleted = group.deleted
-            }
-            "list" -> {
-                val list = repo.findList(id)!!
-                payload = list
-                listId = id
-                deleted = list.deleted
-            }
-            "task" -> {
-                val task = repo.findTask(id)!!
-                payload = task
-                listId = task.listId
-                deleted = task.deleted
-                taskSideEffects(userId, task, before, accepted)
-            }
-            else -> {
-                val step = repo.findStep(id)!!
-                payload = step
-                listId = repo.listIdOfTask(step.taskId)
-                deleted = step.deleted
-            }
+        val snapshot = snapshot(spec, id)
+        val payload = snapshot.payload
+        if (payload is TaskDto) {
+            taskSideEffects(userId, payload, before, accepted)
         }
-        events.publishEvent(EntityChanged(spec.type, id, listId, userId, deleted, payload))
+        events.publishEvent(EntityChanged(spec.type, id, snapshot.listId, userId, snapshot.deleted, payload))
     }
+
+    /** The stored row after a change, with the list it belongs to (for fan-out) and its tombstone flag. */
+    private class EntitySnapshot(val payload: Any, val listId: UUID?, val deleted: Boolean)
+
+    private fun snapshot(spec: EntitySpec, id: UUID): EntitySnapshot =
+        when (spec) {
+            EntitySpecs.GROUP -> repo.findGroup(id)!!.let { EntitySnapshot(it, null, it.deleted) }
+            EntitySpecs.LIST -> repo.findList(id)!!.let { EntitySnapshot(it, id, it.deleted) }
+            EntitySpecs.TASK -> repo.findTask(id)!!.let { EntitySnapshot(it, it.listId, it.deleted) }
+            EntitySpecs.STEP -> repo.findStep(id)!!.let { EntitySnapshot(it, repo.listIdOfTask(it.taskId), it.deleted) }
+            else -> unsupported(spec)
+        }
 
     private fun taskSideEffects(userId: UUID, task: TaskDto, before: TaskDto?, accepted: Map<String, FieldChange>) {
         val assignee = task.assigneeId
@@ -185,25 +177,13 @@ class ChangeService(
         val shift = ChronoUnit.DAYS.between(base, next)
         val newId = UUID.randomUUID()
         val stamp = hlc.next()
-        val taskClocks = listOf(
-            "listId",
-            "title",
-            "note",
-            "important",
-            "dueDate",
-            "reminderAt",
-            "repeatType",
-            "repeatInterval",
-            "repeatDays",
-            "assigneeId",
-            "position",
-        ).associateWith { stamp }
+        val taskClocks = EntitySpecs.TASK_OCCURRENCE_FIELDS.associateWith { stamp }
         repo.insertTaskCopy(newId, task, next, task.reminderAt?.plusDays(shift), taskClocks)
-        events.publishEvent(EntityChanged("task", newId, task.listId, userId, false, repo.findTask(newId)!!))
+        events.publishEvent(EntityChanged(EntitySpecs.TASK.type, newId, task.listId, userId, false, repo.findTask(newId)!!))
         repo.stepsOfTask(task.id).forEach { step ->
             val stepId = UUID.randomUUID()
-            repo.insertStepCopy(stepId, newId, step, listOf("title", "position").associateWith { stamp })
-            events.publishEvent(EntityChanged("step", stepId, task.listId, userId, false, repo.findStep(stepId)!!))
+            repo.insertStepCopy(stepId, newId, step, EntitySpecs.STEP_OCCURRENCE_FIELDS.associateWith { stamp })
+            events.publishEvent(EntityChanged(EntitySpecs.STEP.type, stepId, task.listId, userId, false, repo.findStep(stepId)!!))
         }
     }
 

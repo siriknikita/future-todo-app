@@ -62,6 +62,26 @@ class EntitySpecsTest {
     }
 
     @Test
+    fun `next occurrence copies exactly the planned task and step fields`() {
+        val taskFields = listOf(
+            "listId",
+            "title",
+            "note",
+            "important",
+            "dueDate",
+            "reminderAt",
+            "repeatType",
+            "repeatInterval",
+            "repeatDays",
+            "assigneeId",
+            "position",
+        )
+
+        assertEquals(taskFields, EntitySpecs.TASK_OCCURRENCE_FIELDS.toList())
+        assertEquals(listOf("title", "position"), EntitySpecs.STEP_OCCURRENCE_FIELDS.toList())
+    }
+
+    @Test
     fun `converts values to column types`() {
         val fields = EntitySpecs.TASK.fields
         val id = UUID.randomUUID()
