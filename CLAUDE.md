@@ -40,7 +40,7 @@ There is no Gradle wrapper yet: run `gradle wrapper` once (then use `./gradlew` 
 |---|---|
 | Run the app (after `docker compose up -d`) | `gradle bootRun` (health: http://localhost:8080/actuator/health; OpenAPI: `/v3/api-docs`) |
 | Lint | `gradle ktlintCheck detekt` (auto-format: `gradle ktlintFormat`) |
-| Unit tests (JUnit 5 + MockK, plus `ModularityTest`) | `gradle test --tests "*AuthServiceTest" --tests "*AdminBootstrapTest" --tests "*SessionServiceTest" --tests "*JwtAndLimiterTest" --tests "*LwwTest" --tests "*HlcClockTest" --tests "*RecurrenceCalculatorTest" --tests "*EntitySpecsTest" --tests "*SearchAndSmartListTest" --tests "*ModularityTest"` |
+| Unit tests (JUnit 5 + MockK, plus `ModularityTest`) | `gradle test --tests "*AuthServiceTest" --tests "*AdminBootstrapTest" --tests "*SessionServiceTest" --tests "*JwtAndLimiterTest" --tests "*LwwTest" --tests "*HlcClockTest" --tests "*SecureTokensTest" --tests "*RecurrenceCalculatorTest" --tests "*EntitySpecsTest" --tests "*SearchAndSmartListTest" --tests "*ModularityTest"` |
 | Integration tests (Testcontainers PostgreSQL, needs Docker) | `gradle test --tests "*IntegrationTest"` |
 | E2E / API tests (HTTP level) | `gradle test --tests "*E2eTest"` |
 | Everything | `gradle test` |

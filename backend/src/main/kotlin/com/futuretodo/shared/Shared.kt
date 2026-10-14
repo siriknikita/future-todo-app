@@ -9,6 +9,8 @@ import org.springframework.stereotype.Component
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
+import java.security.SecureRandom
+import java.util.Base64
 import java.util.UUID
 
 class ApiException(val status: HttpStatus, val code: String, message: String) : RuntimeException(message)
@@ -51,6 +53,27 @@ object CurrentUser {
     }
 
     fun id(): UUID = get().id
+}
+
+/** Random secrets that travel in URLs and JSON: Base64url without padding, from a cryptographically strong generator. */
+object SecureTokens {
+    /** Refresh tokens: 256 bits. */
+    const val REFRESH_TOKEN_BYTES = 32
+
+    /** Single-use email verification and password reset tokens: 192 bits. */
+    const val EMAIL_TOKEN_BYTES = 24
+
+    /** List invitation links: 192 bits. */
+    const val INVITATION_TOKEN_BYTES = 24
+
+    private val random = SecureRandom()
+    private val encoder = Base64.getUrlEncoder().withoutPadding()
+
+    fun urlSafe(bytes: Int): String {
+        val buffer = ByteArray(bytes)
+        random.nextBytes(buffer)
+        return encoder.encodeToString(buffer)
+    }
 }
 
 /** One field edit: the new value plus the hybrid logical clock of the edit. */

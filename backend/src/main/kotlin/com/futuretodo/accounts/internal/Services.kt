@@ -5,6 +5,7 @@ import com.futuretodo.accounts.UserDeleted
 import com.futuretodo.accounts.UserDirectory
 import com.futuretodo.shared.ApiException
 import com.futuretodo.shared.Roles
+import com.futuretodo.shared.SecureTokens
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -23,10 +24,8 @@ import org.springframework.stereotype.Component
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.security.MessageDigest
-import java.security.SecureRandom
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
-import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -182,8 +181,6 @@ class SessionService(
     private val jwt: JwtService,
     @Value("\${app.jwt.refresh-ttl-days:30}") private val refreshTtlDays: Long,
 ) {
-    private val random = SecureRandom()
-
     fun open(user: UserRecord, deviceName: String?, platform: String?): TokenPair {
         val sessionId = UUID.randomUUID()
         val refreshToken = newRefreshToken()
@@ -231,11 +228,7 @@ class SessionService(
 
     private fun expiry(): OffsetDateTime = OffsetDateTime.now(ZoneOffset.UTC).plusDays(refreshTtlDays)
 
-    private fun newRefreshToken(): String {
-        val bytes = ByteArray(32)
-        random.nextBytes(bytes)
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
-    }
+    private fun newRefreshToken(): String = SecureTokens.urlSafe(SecureTokens.REFRESH_TOKEN_BYTES)
 
     companion object {
         fun hash(token: String): String =
@@ -255,7 +248,6 @@ class AuthService(
     private val limiter: LoginRateLimiter,
     private val oidc: OidcVerifier,
 ) {
-    private val random = SecureRandom()
     private val emailRegex = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
 
     @Transactional
@@ -362,11 +354,7 @@ class AuthService(
         mail.sendVerification(user.email, token)
     }
 
-    private fun newToken(): String {
-        val bytes = ByteArray(24)
-        random.nextBytes(bytes)
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
-    }
+    private fun newToken(): String = SecureTokens.urlSafe(SecureTokens.EMAIL_TOKEN_BYTES)
 
     companion object {
         const val KIND_VERIFY = "VERIFY"

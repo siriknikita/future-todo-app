@@ -51,3 +51,22 @@ class HlcClockTest {
         assertTrue(second > first)
     }
 }
+
+class SecureTokensTest {
+    @Test
+    fun `tokens are url safe without padding and have the expected length`() {
+        assertEquals(43, SecureTokens.urlSafe(SecureTokens.REFRESH_TOKEN_BYTES).length)
+        assertEquals(32, SecureTokens.urlSafe(SecureTokens.EMAIL_TOKEN_BYTES).length)
+        assertEquals(32, SecureTokens.urlSafe(SecureTokens.INVITATION_TOKEN_BYTES).length)
+        repeat(100) {
+            assertTrue(SecureTokens.urlSafe(SecureTokens.REFRESH_TOKEN_BYTES).matches(Regex("[A-Za-z0-9_-]+")))
+        }
+    }
+
+    @Test
+    fun `tokens do not repeat`() {
+        val tokens = List(1000) { SecureTokens.urlSafe(SecureTokens.EMAIL_TOKEN_BYTES) }
+
+        assertEquals(tokens.size, tokens.toSet().size)
+    }
+}
