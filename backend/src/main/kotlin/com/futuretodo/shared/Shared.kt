@@ -30,9 +30,15 @@ class ApiExceptionHandler {
         ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ErrorResponse("BAD_REQUEST", "Invalid parameter ${e.name}"))
 }
 
+/** Account roles as stored in the database and carried in the access token. */
+object Roles {
+    const val USER = "USER"
+    const val ADMIN = "ADMIN"
+}
+
 /** Identity of the caller, stored as the principal of the Spring Security authentication. */
 data class AuthUser(val id: UUID, val role: String, val sessionId: UUID?) {
-    fun isAdmin(): Boolean = role == "ADMIN"
+    fun isAdmin(): Boolean = role == Roles.ADMIN
 }
 
 object CurrentUser {

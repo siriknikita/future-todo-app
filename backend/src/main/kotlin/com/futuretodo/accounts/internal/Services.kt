@@ -4,6 +4,7 @@ import com.futuretodo.accounts.UserDataContributor
 import com.futuretodo.accounts.UserDeleted
 import com.futuretodo.accounts.UserDirectory
 import com.futuretodo.shared.ApiException
+import com.futuretodo.shared.Roles
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -261,19 +262,7 @@ class AuthService(
             throw ApiException(HttpStatus.CONFLICT, "EMAIL_TAKEN", "Email is already registered")
         }
         val name = request.displayName?.trim().takeUnless { it.isNullOrEmpty() } ?: email.substringBefore("@")
-        val user = UserRecord(
-            UUID.randomUUID(),
-            email,
-            encoder.encode(request.password),
-            name,
-            null,
-            false,
-            "USER",
-            false,
-            "{}",
-            OffsetDateTime.now(ZoneOffset.UTC),
-            null,
-        )
+        val user = UserRecord.newUser(email, encoder.encode(request.password), name, emailVerified = false)
         users.insert(user)
         sendVerification(user)
         return user.toProfile()
@@ -349,19 +338,7 @@ class AuthService(
             if (user != null) {
                 users.linkOAuth(user.id, provider, identity.subject)
             } else {
-                val created = UserRecord(
-                    UUID.randomUUID(),
-                    email,
-                    null,
-                    identity.name ?: email.substringBefore("@"),
-                    null,
-                    true,
-                    "USER",
-                    false,
-                    "{}",
-                    OffsetDateTime.now(ZoneOffset.UTC),
-                    null,
-                )
+                val created = UserRecord.newUser(email, null, identity.name ?: email.substringBefore("@"), emailVerified = true)
                 users.insert(created, provider, identity.subject)
                 user = created
             }
@@ -520,19 +497,7 @@ class AdminBootstrap(
             return
         }
         users.insert(
-            UserRecord(
-                UUID.randomUUID(),
-                email.lowercase(),
-                encoder.encode(password),
-                "Administrator",
-                null,
-                true,
-                "ADMIN",
-                false,
-                "{}",
-                OffsetDateTime.now(ZoneOffset.UTC),
-                null,
-            ),
+            UserRecord.newUser(email.lowercase(), encoder.encode(password), "Administrator", emailVerified = true, role = Roles.ADMIN),
         )
     }
 }

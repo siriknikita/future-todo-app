@@ -6,7 +6,10 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.http.HttpStatus
@@ -24,19 +27,8 @@ class AuthServiceTest {
     private val oidc = mockk<OidcVerifier>()
     private val service = AuthService(users, emailTokens, sessions, encoder, mail, limiter, oidc)
 
-    private fun user(verified: Boolean = true, blocked: Boolean = false) = UserRecord(
-        UUID.randomUUID(),
-        "a@b.com",
-        "hash",
-        "Alice",
-        null,
-        verified,
-        "USER",
-        blocked,
-        "{}",
-        OffsetDateTime.now(),
-        null,
-    )
+    private fun user(verified: Boolean = true, blocked: Boolean = false) =
+        UserRecord.newUser("a@b.com", "hash", "Alice", verified).copy(blocked = blocked)
 
     @Test
     fun `register stores user and sends verification email`() {
@@ -135,6 +127,29 @@ class AuthServiceTest {
         every { users.findByEmail("a@b.com") } returns user()
         service.forgotPassword("a@b.com", "ip")
         verify { mail.sendPasswordReset("a@b.com", any()) }
+    }
+
+    @Test
+    fun `oauth login creates a verified user for a new identity`() {
+        every { oidc.verify("google", "id-token") } returns OidcIdentity("sub-1", " New@Mail.com ", null)
+        every { users.findByOAuth("google", "sub-1") } returns null
+        every { users.findByEmail("new@mail.com") } returns null
+        val saved = slot<UserRecord>()
+        every { users.insert(capture(saved), "google", "sub-1") } returns Unit
+
+        service.oauthLogin("google", OAuthRequest("id-token", "laptop", "web"))
+
+        val created = saved.captured
+        assertEquals("new@mail.com", created.email)
+        assertNull(created.passwordHash)
+        assertEquals("new", created.displayName)
+        assertNull(created.photoUrl)
+        assertTrue(created.emailVerified)
+        assertEquals("USER", created.role)
+        assertFalse(created.blocked)
+        assertEquals("{}", created.settings)
+        assertNull(created.lastSeenAt)
+        verify { sessions.open(created, "laptop", "web") }
     }
 
     @Test
