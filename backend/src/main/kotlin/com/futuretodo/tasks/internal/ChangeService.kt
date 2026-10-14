@@ -28,6 +28,7 @@ import java.util.UUID
 class ChangeService(
     private val repo: TaskRepository,
     private val access: ListAccess,
+    private val guard: TaskAccessGuard,
     private val events: ApplicationEventPublisher,
     private val hlc: HlcClock,
 ) : SyncChangeApplier {
@@ -69,7 +70,7 @@ class ChangeService(
             "step" -> {
                 val taskId = if (exists) repo.taskIdOfStep(id) else uuid(fields["taskId"]?.value, "taskId")
                 val listId = taskId?.let { repo.listIdOfTask(it) } ?: throw notFound("Task")
-                requireAccess(userId, listId)
+                guard.requireMember(listId, userId)
             }
         }
     }
@@ -82,10 +83,10 @@ class ChangeService(
             throw ApiException(HttpStatus.BAD_REQUEST, "INVALID_FIELD", "listId is required")
         }
         if (currentList != null) {
-            requireAccess(userId, currentList)
+            guard.requireMember(currentList, userId)
         }
         if (targetList != currentList) {
-            requireAccess(userId, targetList)
+            guard.requireMember(targetList, userId)
             if (repo.findList(targetList)?.deleted != false) {
                 throw notFound("List")
             }
@@ -95,14 +96,6 @@ class ChangeService(
             throw ApiException(HttpStatus.BAD_REQUEST, "ASSIGNEE_NOT_MEMBER", "Assignee is not a member of the list")
         }
     }
-
-    private fun requireAccess(userId: UUID, listId: UUID) {
-        if (access.roleOf(listId, userId) == null) {
-            throw notFound("List")
-        }
-    }
-
-    private fun notFound(what: String) = ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "$what not found")
 
     private fun uuid(value: Any?, field: String): UUID =
         try {

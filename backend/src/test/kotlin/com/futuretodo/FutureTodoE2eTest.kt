@@ -196,6 +196,30 @@ class FutureTodoE2eTest : IntegrationTestBase() {
     }
 
     @Test
+    fun `strangers get 404 for groups lists tasks and steps they cannot see`() {
+        val owner = newUser("private")
+        val stranger = newUser("stranger")
+        val groupId = api.post("/list-groups", owner.accessToken, mapOf("name" to "Mine")).json()["id"].asText()
+        val listId = createList(owner, "Private")
+        val taskId = createTask(owner, listId, "Secret")
+        val stepId = api.post("/tasks/$taskId/steps", owner.accessToken, mapOf("title" to "Hidden")).json()["id"].asText()
+
+        fun assertNotFound(response: ApiResponse, what: String) {
+            assertEquals(404, response.status)
+            assertEquals("NOT_FOUND", response.json()["code"].asText())
+            assertEquals("$what not found", response.json()["message"].asText())
+        }
+        assertNotFound(api.patch("/list-groups/$groupId", stranger.accessToken, mapOf("name" to "Taken")), "Group")
+        assertNotFound(api.get("/lists/$listId", stranger.accessToken), "List")
+        assertNotFound(api.patch("/lists/$listId", stranger.accessToken, mapOf("name" to "Taken")), "List")
+        assertNotFound(api.get("/lists/$listId/tasks", stranger.accessToken), "List")
+        assertNotFound(api.post("/lists/$listId/tasks", stranger.accessToken, mapOf("title" to "Spam")), "List")
+        assertNotFound(api.get("/tasks/$taskId", stranger.accessToken), "Task")
+        assertNotFound(api.patch("/steps/$stepId", stranger.accessToken, mapOf("title" to "Taken")), "Task")
+        assertNotFound(api.get("/lists/${UUID.randomUUID()}/tasks", owner.accessToken), "List")
+    }
+
+    @Test
     fun `sharing flow invite join members assign notify and leave`() {
         val owner = newUser("owner")
         val guest = newUser("guest")

@@ -25,8 +25,6 @@ import java.time.ZoneOffset
 import java.time.temporal.TemporalAdjusters
 import java.util.UUID
 
-private fun notFound(what: String) = ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "$what not found")
-
 private fun requireText(body: Map<String, Any?>, key: String) {
     val value = body[key]
     if (value !is String || value.isBlank()) {
@@ -43,6 +41,7 @@ class ListController(
     private val changes: ChangeService,
     private val repo: TaskRepository,
     private val access: ListAccess,
+    private val guard: TaskAccessGuard,
 ) {
     @GetMapping("/list-groups")
     fun groups(): List<GroupDto> = repo.groupsOf(CurrentUser.id())
@@ -55,7 +54,7 @@ class ListController(
         requireText(body, "name")
         val id = UUID.randomUUID()
         changes.writeRest(CurrentUser.id(), EntitySpecs.GROUP, id, withPosition(body))
-        return repo.findGroup(id)!!
+        return repo.findGroup(id) ?: throw notFound("Group")
     }
 
     @PatchMapping("/list-groups/{id}")
@@ -65,7 +64,7 @@ class ListController(
     ): GroupDto {
         ownGroup(id)
         changes.writeRest(CurrentUser.id(), EntitySpecs.GROUP, id, body)
-        return repo.findGroup(id)!!
+        return repo.findGroup(id) ?: throw notFound("Group")
     }
 
     @DeleteMapping("/list-groups/{id}")
@@ -90,22 +89,22 @@ class ListController(
         requireText(body, "name")
         val id = UUID.randomUUID()
         changes.writeRest(CurrentUser.id(), EntitySpecs.LIST, id, withPosition(body))
-        return repo.findList(id)!!
+        return repo.findList(id) ?: throw notFound("List")
     }
 
     @GetMapping("/lists/{id}")
     fun getList(
         @PathVariable id: UUID
-    ): ListDto = visibleList(id)
+    ): ListDto = guard.visibleList(id, CurrentUser.id())
 
     @PatchMapping("/lists/{id}")
     fun updateList(
         @PathVariable id: UUID,
         @RequestBody body: Map<String, Any?>
     ): ListDto {
-        visibleList(id)
+        guard.visibleList(id, CurrentUser.id())
         changes.writeRest(CurrentUser.id(), EntitySpecs.LIST, id, body)
-        return repo.findList(id)!!
+        return repo.findList(id) ?: throw notFound("List")
     }
 
     @DeleteMapping("/lists/{id}")
@@ -113,7 +112,7 @@ class ListController(
     fun deleteList(
         @PathVariable id: UUID
     ) {
-        visibleList(id)
+        guard.visibleList(id, CurrentUser.id())
         changes.writeRest(CurrentUser.id(), EntitySpecs.LIST, id, mapOf("deleted" to true))
     }
 
@@ -124,14 +123,6 @@ class ListController(
         }
         return group
     }
-
-    private fun visibleList(id: UUID): ListDto {
-        val list = repo.findList(id)
-        if (list == null || list.deleted || access.roleOf(id, CurrentUser.id()) == null) {
-            throw notFound("List")
-        }
-        return list
-    }
 }
 
 @RestController
@@ -139,7 +130,7 @@ class ListController(
 class TaskController(
     private val changes: ChangeService,
     private val repo: TaskRepository,
-    private val access: ListAccess,
+    private val guard: TaskAccessGuard,
 ) {
     @GetMapping("/lists/{listId}/tasks")
     fun tasks(
@@ -148,7 +139,7 @@ class TaskController(
         @RequestParam(defaultValue = "asc") order: String,
         @RequestParam(defaultValue = "true") showCompleted: Boolean,
     ): List<TaskDto> {
-        visibleList(listId)
+        guard.visibleList(listId, CurrentUser.id())
         return repo.withSteps(repo.tasksOfList(listId, showCompleted, sort, order == "desc"))
     }
 
@@ -158,11 +149,11 @@ class TaskController(
         @PathVariable listId: UUID,
         @RequestBody body: Map<String, Any?>
     ): TaskDto {
-        visibleList(listId)
+        guard.visibleList(listId, CurrentUser.id())
         requireText(body, "title")
         val id = UUID.randomUUID()
         changes.writeRest(CurrentUser.id(), EntitySpecs.TASK, id, withPosition(body) + ("listId" to listId.toString()))
-        return withSteps(repo.findTask(id)!!)
+        return withSteps(repo.findTask(id) ?: throw notFound("Task"))
     }
 
     @GetMapping("/tasks/{id}")
@@ -181,7 +172,7 @@ class TaskController(
             data["completedAt"] = if (data["completed"] == true) changes.nowUtc().toString() else null
         }
         changes.writeRest(CurrentUser.id(), EntitySpecs.TASK, id, data)
-        return withSteps(repo.findTask(id)!!)
+        return withSteps(repo.findTask(id) ?: throw notFound("Task"))
     }
 
     @DeleteMapping("/tasks/{id}")
@@ -211,7 +202,7 @@ class TaskController(
         requireText(body, "title")
         val id = UUID.randomUUID()
         changes.writeRest(CurrentUser.id(), EntitySpecs.STEP, id, withPosition(body) + ("taskId" to taskId.toString()))
-        return repo.findStep(id)!!
+        return repo.findStep(id) ?: throw notFound("Step")
     }
 
     @PatchMapping("/steps/{id}")
@@ -221,7 +212,7 @@ class TaskController(
     ): StepDto {
         visibleStep(id)
         changes.writeRest(CurrentUser.id(), EntitySpecs.STEP, id, body - "taskId")
-        return repo.findStep(id)!!
+        return repo.findStep(id) ?: throw notFound("Step")
     }
 
     @DeleteMapping("/steps/{id}")
@@ -235,16 +226,9 @@ class TaskController(
 
     private fun withSteps(task: TaskDto): TaskDto = task.copy(steps = repo.stepsOfTask(task.id))
 
-    private fun visibleList(listId: UUID) {
-        val list = repo.findList(listId)
-        if (list == null || list.deleted || access.roleOf(listId, CurrentUser.id()) == null) {
-            throw notFound("List")
-        }
-    }
-
     private fun visibleTask(id: UUID, allowDeleted: Boolean): TaskDto {
         val task = repo.findTask(id)
-        if (task == null || (task.deleted && !allowDeleted) || access.roleOf(task.listId, CurrentUser.id()) == null) {
+        if (task == null || (task.deleted && !allowDeleted) || !guard.isMember(task.listId, CurrentUser.id())) {
             throw notFound("Task")
         }
         return task
