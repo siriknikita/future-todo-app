@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:future_todo/core/hlc.dart';
+import 'package:future_todo/core/pref_keys.dart';
+import 'package:future_todo/data/db/database.dart';
+import 'package:future_todo/data/remote/remote_api.dart';
+import 'package:future_todo/data/repository.dart';
 
 import '../helpers/pump_app.dart';
 
@@ -177,6 +182,96 @@ void main() {
         .tap(find.descendant(of: step, matching: find.byIcon(Icons.close)));
     await tester.pumpAndSettle();
     expect(find.text('Pack'), findsNothing);
+
+    await disposeApp(tester, h);
+  });
+
+  testWidgets('title, completion and importance are edited in the panel',
+      (tester) async {
+    final h = await pumpApp(tester);
+    await openTask(tester);
+    Future<Task> task() async =>
+        (await tester.runAsync(() => h.db.select(h.db.tasks).getSingle()))!;
+
+    await submitText(
+      tester,
+      find.byWidgetPredicate(
+        (w) =>
+            w.key is ValueKey<String> &&
+            (w.key! as ValueKey<String>).value.startsWith('details-title-'),
+      ),
+      'Holiday',
+    );
+    expect((await task()).title, 'Holiday');
+
+    await tester.tap(inTile('task-details', find.byIcon(Icons.star_border)));
+    await tester.pumpAndSettle();
+    expect((await task()).isImportant, isTrue);
+    expect(inTile('task-details', find.byIcon(Icons.star)), findsOneWidget);
+
+    await tester.tap(inTile('task-details', find.byType(Checkbox)).first);
+    await tester.pumpAndSettle();
+    expect((await task()).isCompleted, isTrue);
+
+    await disposeApp(tester, h);
+  });
+
+  testWidgets('on a narrow screen deleting a task closes its details page',
+      (tester) async {
+    final h = await pumpApp(tester, size: const Size(900, 900));
+    await openTask(tester);
+    expect(find.byType(BackButton), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('delete-task')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('task-details')), findsNothing);
+    expect(find.text('Task deleted'), findsOneWidget);
+
+    await disposeApp(tester, h);
+  });
+
+  testWidgets('tasks in a list shared with me can be assigned (FR-5.4)',
+      (tester) async {
+    final h = await pumpApp(
+      tester,
+      prefs: {
+        PrefKeys.accessToken: 'a',
+        PrefKeys.refreshToken: 'r',
+        PrefKeys.userId: 'user-1',
+        PrefKeys.userEmail: 'a@b.co',
+      },
+    );
+    final listId = (await tester.runAsync(
+      () => TodoRepository(h.db, HlcClock('other'))
+          .createList('Shared', ownerId: 'user-9'),
+    ))!;
+    h.remote.members[listId] = const [
+      ListMember(userId: 'user-9', name: 'Owner', isOwner: true),
+      ListMember(userId: 'user-2', name: 'Bob', isOwner: false),
+    ];
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Shared'));
+    await tester.pumpAndSettle();
+    await submitText(tester, find.byKey(const Key('quick-add')), 'Trip');
+    await tester.tap(find.text('Trip'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('assignee-dropdown')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Bob').last);
+    await tester.pumpAndSettle();
+    final task =
+        (await tester.runAsync(() => h.db.select(h.db.tasks).getSingle()))!;
+    expect(task.assigneeId, 'user-2');
+
+    await disposeApp(tester, h);
+  });
+
+  testWidgets('tasks in my own unshared lists have no assignee picker',
+      (tester) async {
+    final h = await pumpApp(tester);
+    await openTask(tester);
+    expect(find.byKey(const Key('assignee-dropdown')), findsNothing);
 
     await disposeApp(tester, h);
   });
