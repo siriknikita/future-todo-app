@@ -79,6 +79,16 @@ data class SessionDto(
 
 fun UserRecord.toProfile() = UserProfile(id, email, displayName, photoUrl, emailVerified, role, createdAt)
 
+/** Emails are stored and looked up trimmed and in lower case. */
+private fun normalizeEmail(raw: String): String = raw.trim().lowercase()
+
+/** A blocked account (FR-11) can neither log in nor refresh its tokens. */
+private fun requireNotBlocked(user: UserRecord) {
+    if (user.blocked) {
+        throw ApiException(HttpStatus.FORBIDDEN, "ACCOUNT_BLOCKED", "Account is blocked")
+    }
+}
+
 // ---------- Mail ----------
 
 @Service
@@ -192,9 +202,7 @@ class SessionService(
         }
         val user = users.findById(session.userId)
             ?: throw ApiException(HttpStatus.UNAUTHORIZED, "INVALID_REFRESH_TOKEN", "Refresh token is invalid")
-        if (user.blocked) {
-            throw ApiException(HttpStatus.FORBIDDEN, "ACCOUNT_BLOCKED", "Account is blocked")
-        }
+        requireNotBlocked(user)
         val newToken = newRefreshToken()
         sessions.rotate(session.id, hash(newToken), expiry())
         users.touchLastSeen(user.id)
@@ -253,7 +261,7 @@ class AuthService(
     @Transactional
     fun register(request: RegisterRequest, clientKey: String): UserProfile {
         limiter.check("register:$clientKey")
-        val email = request.email.trim().lowercase()
+        val email = normalizeEmail(request.email)
         if (!emailRegex.matches(email)) {
             throw ApiException(HttpStatus.BAD_REQUEST, "INVALID_EMAIL", "Email is not valid")
         }
@@ -269,7 +277,7 @@ class AuthService(
     }
 
     fun resendVerification(email: String) {
-        val user = users.findByEmail(email.trim().lowercase())
+        val user = users.findByEmail(normalizeEmail(email))
         if (user != null && !user.emailVerified) {
             sendVerification(user)
         }
@@ -277,16 +285,13 @@ class AuthService(
 
     @Transactional
     fun verifyEmail(token: String) {
-        val record = emailTokens.find(token, KIND_VERIFY)
-        if (record == null || record.used || record.expiresAt.isBefore(OffsetDateTime.now())) {
-            throw ApiException(HttpStatus.BAD_REQUEST, "INVALID_TOKEN", "Token is invalid or expired")
-        }
+        val record = consumableToken(token, KIND_VERIFY)
         users.markVerified(record.userId)
         emailTokens.markUsed(token)
     }
 
     fun login(request: LoginRequest, clientKey: String): TokenPair {
-        val email = request.email.trim().lowercase()
+        val email = normalizeEmail(request.email)
         limiter.check("login:$clientKey:$email")
         val user = users.findByEmail(email)
         val hash = user?.passwordHash
@@ -296,9 +301,7 @@ class AuthService(
         if (!user.emailVerified) {
             throw ApiException(HttpStatus.FORBIDDEN, "EMAIL_NOT_VERIFIED", "Confirm your email first")
         }
-        if (user.blocked) {
-            throw ApiException(HttpStatus.FORBIDDEN, "ACCOUNT_BLOCKED", "Account is blocked")
-        }
+        requireNotBlocked(user)
         return sessions.open(user, request.deviceName, request.platform)
     }
 
@@ -308,7 +311,7 @@ class AuthService(
 
     fun forgotPassword(email: String, clientKey: String) {
         limiter.check("forgot:$clientKey")
-        val user = users.findByEmail(email.trim().lowercase()) ?: return
+        val user = users.findByEmail(normalizeEmail(email)) ?: return
         val token = newToken()
         emailTokens.insert(token, user.id, KIND_RESET, OffsetDateTime.now(ZoneOffset.UTC).plusHours(1))
         mail.sendPasswordReset(user.email, token)
@@ -317,10 +320,7 @@ class AuthService(
     @Transactional
     fun resetPassword(token: String, newPassword: String) {
         validatePassword(newPassword)
-        val record = emailTokens.find(token, KIND_RESET)
-        if (record == null || record.used || record.expiresAt.isBefore(OffsetDateTime.now())) {
-            throw ApiException(HttpStatus.BAD_REQUEST, "INVALID_TOKEN", "Token is invalid or expired")
-        }
+        val record = consumableToken(token, KIND_RESET)
         users.updatePassword(record.userId, encoder.encode(newPassword))
         users.markVerified(record.userId)
         emailTokens.markUsed(token)
@@ -330,7 +330,7 @@ class AuthService(
     @Transactional
     fun oauthLogin(provider: String, request: OAuthRequest): TokenPair {
         val identity = oidc.verify(provider, request.idToken)
-        val email = identity.email?.trim()?.lowercase()
+        val email = identity.email?.let(::normalizeEmail)
             ?: throw ApiException(HttpStatus.BAD_REQUEST, "EMAIL_MISSING", "Provider did not return an email")
         var user = users.findByOAuth(provider, identity.subject)
         if (user == null) {
@@ -343,10 +343,17 @@ class AuthService(
                 user = created
             }
         }
-        if (user.blocked) {
-            throw ApiException(HttpStatus.FORBIDDEN, "ACCOUNT_BLOCKED", "Account is blocked")
-        }
+        requireNotBlocked(user)
         return sessions.open(user, request.deviceName, request.platform)
+    }
+
+    /** The email token of the given kind, if it exists, is unused and has not expired; 400 INVALID_TOKEN otherwise. */
+    private fun consumableToken(token: String, kind: String): EmailTokenRecord {
+        val record = emailTokens.find(token, kind)
+        if (record == null || record.used || record.expiresAt.isBefore(OffsetDateTime.now())) {
+            throw ApiException(HttpStatus.BAD_REQUEST, "INVALID_TOKEN", "Token is invalid or expired")
+        }
+        return record
     }
 
     private fun sendVerification(user: UserRecord) {
