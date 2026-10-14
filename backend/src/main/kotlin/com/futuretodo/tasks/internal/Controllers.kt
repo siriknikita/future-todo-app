@@ -288,37 +288,16 @@ class SmartListController(private val repo: TaskRepository, private val access: 
         @PathVariable type: String,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) today: LocalDate?,
     ): SmartListResponse {
-        val user = CurrentUser.id()
-        val day = today ?: LocalDate.now(ZoneOffset.UTC)
-        val lists = access.accessibleListIds(user)
-        val params = mapOf("today" to day, "user" to user)
-        val ownOrAssigned = "(l.owner_id = :user OR t.assignee_id = :user)"
-        return when (type) {
-            "my-day" -> response(type, repo.smart(lists, "t.my_day_date = :today AND $ownOrAssigned", params, "t.position, t.created_at"))
-            "important" -> response(type, repo.smart(lists, "t.important", params, "t.completed, t.created_at DESC"))
-            "planned" -> {
-                val planned = repo.smart(lists, "t.due_date IS NOT NULL AND NOT t.completed", params, "t.due_date, t.created_at")
-                val tasks = repo.withSteps(planned)
-                SmartListResponse(type, tasks, SmartLists.group(tasks, day))
-            }
-            "assigned-to-me" -> response(type, repo.smart(lists, "t.assignee_id = :user", params, "t.completed, t.created_at DESC"))
-            "all" -> response(type, repo.smart(lists, "TRUE", params, "t.created_at DESC"))
-            "completed" -> response(type, repo.smart(lists, "t.completed", params, "t.completed_at DESC NULLS LAST"))
-            else -> throw notFound("Smart list")
-        }
+        val query = SmartListQuery.byPath(type) ?: throw notFound("Smart list")
+        val day = today ?: todayUtc()
+        val tasks = repo.withSteps(smartTasks(query, day))
+        return SmartListResponse(type, tasks, if (query == SmartListQuery.PLANNED) SmartLists.group(tasks, day) else null)
     }
 
     @GetMapping("/smart-lists/my-day/suggestions")
     fun suggestions(
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) today: LocalDate?,
-    ): List<TaskDto> {
-        val user = CurrentUser.id()
-        val day = today ?: LocalDate.now(ZoneOffset.UTC)
-        val condition = "NOT t.completed AND (t.my_day_date IS NULL OR t.my_day_date <> :today) " +
-            "AND (t.due_date <= :today OR t.my_day_date < :today) AND (l.owner_id = :user OR t.assignee_id = :user)"
-        val lists = access.accessibleListIds(user)
-        return repo.withSteps(repo.smart(lists, condition, mapOf("today" to day, "user" to user), "t.due_date NULLS LAST"))
-    }
+    ): List<TaskDto> = repo.withSteps(smartTasks(SmartListQuery.MY_DAY_SUGGESTIONS, today ?: todayUtc()))
 
     @GetMapping("/search")
     fun search(
@@ -329,7 +308,13 @@ class SmartListController(private val repo: TaskRepository, private val access: 
         return repo.withSteps(repo.search(access.accessibleListIds(CurrentUser.id()), query, includeCompleted))
     }
 
-    private fun response(type: String, tasks: List<TaskDto>) = SmartListResponse(type, repo.withSteps(tasks))
+    private fun smartTasks(query: SmartListQuery, day: LocalDate): List<TaskDto> {
+        val user = CurrentUser.id()
+        return repo.smartList(query, access.accessibleListIds(user), user, day)
+    }
+
+    /** Fallback when the client does not send its local date. */
+    private fun todayUtc(): LocalDate = LocalDate.now(ZoneOffset.UTC)
 }
 
 @Component

@@ -151,6 +151,30 @@ class FutureTodoE2eTest : IntegrationTestBase() {
     }
 
     @Test
+    fun `smart list all and my day suggestions pick the right tasks`() {
+        val user = newUser("smart")
+        val listId = createList(user, "Inbox")
+        val dueToday = createTask(user, listId, "Pay rent", mapOf("dueDate" to "2026-10-04"))
+        val leftover = createTask(user, listId, "Call mom", mapOf("myDayDate" to "2026-10-03"))
+        val alreadyInMyDay = createTask(user, listId, "Already planned", mapOf("dueDate" to "2026-10-01", "myDayDate" to "2026-10-04"))
+        val done = createTask(user, listId, "Done", mapOf("dueDate" to "2026-10-01"))
+        assertEquals(200, api.patch("/tasks/$done", user.accessToken, mapOf("completed" to true)).status)
+        val future = createTask(user, listId, "Later", mapOf("dueDate" to "2026-10-20"))
+
+        val all = api.get("/smart-lists/all", user.accessToken).json()
+        assertEquals("all", all["type"].asText())
+        assertEquals(listOf(future, done, alreadyInMyDay, leftover, dueToday), all["tasks"].map { it["id"].asText() })
+
+        val suggestions = api.get("/smart-lists/my-day/suggestions?today=2026-10-04", user.accessToken).json()
+        assertEquals(listOf(dueToday, leftover), suggestions.map { it["id"].asText() })
+
+        val unknown = api.get("/smart-lists/someday", user.accessToken)
+        assertEquals(404, unknown.status)
+        assertEquals("NOT_FOUND", unknown.json()["code"].asText())
+        assertEquals("Smart list not found", unknown.json()["message"].asText())
+    }
+
+    @Test
     fun `lists can be grouped reordered renamed and deleted`() {
         val user = newUser()
         val group = api.post("/list-groups", user.accessToken, mapOf("name" to "Work"))
