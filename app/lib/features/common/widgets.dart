@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:future_todo/core/limits.dart';
 import 'package:future_todo/l10n/app_localizations.dart';
 
 /// Shows a dialog with one text field. Returns the trimmed text, or null when
@@ -8,7 +9,7 @@ Future<String?> promptText(
   required String title,
   String initial = '',
   String? hint,
-  int maxLength = 255,
+  int maxLength = maxTitleLength,
 }) {
   final controller = TextEditingController(text: initial);
   final l = AppLocalizations.of(context);

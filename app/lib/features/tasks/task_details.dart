@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:future_todo/core/dates.dart';
+import 'package:future_todo/core/limits.dart';
 import 'package:future_todo/data/db/database.dart';
 import 'package:future_todo/data/remote/remote_api.dart';
 import 'package:future_todo/domain/repeat.dart';
@@ -60,7 +61,7 @@ class TaskDetails extends ConsumerWidget {
                 child: CommitTextField(
                   key: Key('details-title-${task.id}'),
                   value: task.title,
-                  maxLength: 255,
+                  maxLength: maxTitleLength,
                   style: Theme.of(context).textTheme.titleMedium,
                   onCommit: (v) {
                     if (v.trim().isNotEmpty) repo.renameTask(task.id, v.trim());

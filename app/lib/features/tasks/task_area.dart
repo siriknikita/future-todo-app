@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:future_todo/core/dates.dart';
+import 'package:future_todo/core/limits.dart';
 import 'package:future_todo/data/db/database.dart';
 import 'package:future_todo/domain/search.dart';
 import 'package:future_todo/domain/smart_lists.dart';
@@ -252,7 +253,7 @@ class _QuickAddState extends ConsumerState<_QuickAdd> {
         key: const Key('quick-add'),
         controller: _controller,
         focusNode: _focus,
-        inputFormatters: [LengthLimitingTextInputFormatter(255)],
+        inputFormatters: [LengthLimitingTextInputFormatter(maxTitleLength)],
         decoration: InputDecoration(
           prefixIcon: const Icon(Icons.add),
           hintText: l.addTask,
