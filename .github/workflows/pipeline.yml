@@ -24,3 +24,41 @@ jobs:
   app:
     name: CI · App
     uses: ./.github/workflows/app.yml
+
+  # ---------- Step 6 (prod branch): manual approval, then deploy to PROD ----------
+  prod:
+    name: Deploy to PROD (manual approval) · publish images
+    needs: [backend, app]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The "prod" environment has a required reviewer: the job waits for approval.
+    environment: prod
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "*-image"
+          path: ${{ runner.temp }}/images
+          merge-multiple: true
+      - name: Log in to GitHub Container Registry
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Tag and push (commit SHA + latest)
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          for image in "$RUNNER_TEMP"/images/*.tar.gz; do docker load --input "$image"; done
+          for name in future-todo-backend future-todo-app; do
+            for tag in "$GITHUB_SHA" latest; do
+              docker tag "$name:ci" "ghcr.io/$owner/$name:$tag"
+              docker push "ghcr.io/$owner/$name:$tag"
+            done
+          done
+          {
+            echo "### Published images"
+            echo "- \`ghcr.io/$owner/future-todo-backend:$GITHUB_SHA\`"
+            echo "- \`ghcr.io/$owner/future-todo-app:$GITHUB_SHA\`"
+          } >> "$GITHUB_STEP_SUMMARY"
