@@ -51,7 +51,7 @@ services:
       MAIL_PORT: "1025"
       JWT_SECRET: ${JWT_SECRET:-test-env-only-secret-test-env-only-secret-0123456789}
       # Links in emails point at the deployed web client.
-      FRONTEND_URL: http://localhost:${WEB_PORT:-8081}
+      FRONTEND_URL: http://localhost:9999
       # Only the deployed web client and the L5 test client (flutter drive) may call the API.
       CORS_ORIGINS: http://localhost:${WEB_PORT:-8081},http://localhost:${E2E_CLIENT_PORT:-8082}
     ports:
