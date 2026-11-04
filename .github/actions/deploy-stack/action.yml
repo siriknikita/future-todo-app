@@ -1,0 +1,24 @@
+name: Deploy the stack from the pipeline's images
+description: >-
+  Loads the Docker images built earlier in this run (never rebuilds them) and starts
+  deploy/docker-compose.yml: PostgreSQL, Mailpit, backend and the web client.
+  The ENVIRONMENT variable (dev, test, pre-prod) names the Compose project.
+runs:
+  using: composite
+  steps:
+    - uses: actions/download-artifact@v4
+      with:
+        pattern: "*-image"
+        path: ${{ runner.temp }}/images
+        merge-multiple: true
+    - name: Load images
+      shell: bash
+      run: |
+        for image in "$RUNNER_TEMP"/images/*.tar.gz; do docker load --input "$image"; done
+        docker image ls 'future-todo-*'
+    - name: Start the environment and wait until every service is healthy
+      shell: bash
+      run: |
+        docker compose -f deploy/docker-compose.yml up -d --wait --wait-timeout 180
+        docker compose -f deploy/docker-compose.yml ps
+        curl -fsS "${BACKEND_URL:-http://localhost:8080}/actuator/health" && echo

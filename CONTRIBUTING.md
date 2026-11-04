@@ -21,6 +21,10 @@ Work is tracked in [Jira (project KAN)](https://lpnu-team-qggd0gqk.atlassian.net
 4. Open a PR titled `KAN-123: Short description`. `main` only accepts squash merges, so the PR title becomes the commit on `main`.
 5. Resolve all review threads, then merge. The branch is deleted automatically.
 
+## Environments
+
+Pushing to `dev`, `test`, or `pre-prod` deploys that commit to the environment of the same name and runs its test layers (see `CLAUDE.md`, CI/CD). Promote a green commit by fast-forwarding the next branch, for example `git push origin <sha>:test`. `main` is production: a merge there waits for a reviewer to approve the `prod` deployment, which publishes the images to GHCR.
+
 ## Smart commits (optional)
 
 With the Jira GitHub integration connected, commit messages can act on the ticket. Your Git commit email must match your Jira account email.

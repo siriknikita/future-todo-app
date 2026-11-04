@@ -1,0 +1,147 @@
+# Future Todo CI/CD pipeline (Lab 4).
+#
+# Implements the method of automated integration of the "Pentagon" testing model
+# into CI/CD (Kuzmych, Seniv, EEJET 2026): layers are distributed between four
+# environments cumulatively, and the environment is chosen by the branch.
+#
+#   branch      environment  layers                          here
+#   any         (CI only)    build, static analysis, L1, L2  backend.yml + app.yml
+#   dev         DEV          + deploy, L3                    deploy job
+#   test        TEST         + L4 (not implemented yet)      deploy job
+#   pre-prod    PRE-PROD     + L5, L6 (L6 not implemented)   deploy job
+#   main        PROD         L1, L2 -> manual approval ->    prod job
+#                            deploy (publish images to GHCR)
+#
+# Every job `needs` the previous ones, so a failing check stops everything after it.
+name: CI/CD pipeline
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+concurrency:
+  group: pipeline-${{ github.ref }}
+  # Never cancel a production run halfway through publishing.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------- Steps 2-5: build, static analysis, L1, L2 (every branch) ----------
+  backend:
+    name: CI · Backend
+    uses: ./.github/workflows/backend.yml
+
+  app:
+    name: CI · App
+    uses: ./.github/workflows/app.yml
+
+  # ---------- Steps 6-10: deploy to DEV / TEST / PRE-PROD and test there ----------
+  deploy:
+    name: Deploy to ${{ github.ref_name }} + Pentagon layers
+    needs: [backend, app]
+    if: contains(fromJSON('["dev", "test", "pre-prod"]'), github.ref_name)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ github.ref_name }}
+    env:
+      ENVIRONMENT: ${{ github.ref_name }}
+      BACKEND_URL: http://localhost:8080
+      WEB_URL: http://localhost:8081
+      MAILPIT_URL: http://localhost:8025
+      # The L5 test client is served here; deploy/docker-compose.yml allows it in CORS.
+      E2E_CLIENT_PORT: "8082"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Step 6 · Deploy the images built in this run
+        uses: ./.github/actions/deploy-stack
+
+      - uses: ./.github/actions/setup-gradle
+      - name: Step 7 · L3 global integration tests (DEV, TEST, PRE-PROD)
+        working-directory: backend
+        run: >-
+          gradle globalIntegrationTest
+          -PbaseUrl="$BACKEND_URL" -PmailpitUrl="$MAILPIT_URL" -PwebUrl="$WEB_URL"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: l3-global-integration-report-${{ github.ref_name }}
+          path: backend/build/reports/tests/globalIntegrationTest
+
+      # Step 8 · L4 fault tolerance (TEST, PRE-PROD) is not implemented yet.
+
+      - uses: ./.github/actions/setup-flutter
+        if: env.ENVIRONMENT == 'pre-prod'
+        with:
+          prepare-web: "true"
+      - uses: nanasess/setup-chromedriver@v2
+        if: env.ENVIRONMENT == 'pre-prod'
+      - name: Step 9 · L5 end-to-end scenario through the UI (PRE-PROD)
+        if: env.ENVIRONMENT == 'pre-prod'
+        working-directory: app
+        run: |
+          chromedriver --port=4444 &
+          flutter drive \
+            --driver=test_driver/integration_test.dart \
+            --target=integration_test/full_stack_test.dart \
+            -d web-server --web-port="$E2E_CLIENT_PORT" --browser-name=chrome --headless \
+            --dart-define=API_BASE_URL="$BACKEND_URL" \
+            --dart-define=MAILPIT_URL="$MAILPIT_URL"
+      - name: Log of the L5 run
+        if: always() && env.ENVIRONMENT == 'pre-prod'
+        working-directory: app
+        run: |
+          [ -f build/integration_response_data.json ] || exit 0
+          jq -r '.steps[]' build/integration_response_data.json
+          jq -r '"### L5 scenario\n" + (.steps | map("- " + .) | join("\n"))' \
+            build/integration_response_data.json >> "$GITHUB_STEP_SUMMARY"
+
+      # Step 10 · L6 chaos testing (PRE-PROD) is not implemented yet.
+
+      - name: Service logs
+        if: failure()
+        run: docker compose -f deploy/docker-compose.yml logs --no-color
+      - name: Tear down the environment
+        if: always()
+        run: docker compose -f deploy/docker-compose.yml down -v
+
+  # ---------- Step 6 (prod branch): manual approval, then deploy to PROD ----------
+  prod:
+    name: Deploy to PROD (manual approval) · publish images
+    needs: [backend, app]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The "prod" environment has a required reviewer: the job waits for approval.
+    environment: prod
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "*-image"
+          path: ${{ runner.temp }}/images
+          merge-multiple: true
+      - name: Log in to GitHub Container Registry
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Tag and push (commit SHA + latest)
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          for image in "$RUNNER_TEMP"/images/*.tar.gz; do docker load --input "$image"; done
+          for name in future-todo-backend future-todo-app; do
+            for tag in "$GITHUB_SHA" latest; do
+              docker tag "$name:ci" "ghcr.io/$owner/$name:$tag"
+              docker push "ghcr.io/$owner/$name:$tag"
+            done
+          done
+          {
+            echo "### Published images"
+            echo "- \`ghcr.io/$owner/future-todo-backend:$GITHUB_SHA\`"
+            echo "- \`ghcr.io/$owner/future-todo-app:$GITHUB_SHA\`"
+          } >> "$GITHUB_STEP_SUMMARY"

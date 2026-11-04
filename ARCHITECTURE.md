@@ -159,6 +159,19 @@ Development is test-driven (XP). The SRS requires at least **80% test coverage**
 | Integration | Drift database tests, repository tests | Spring Boot tests with **Testcontainers** (real PostgreSQL); `@ApplicationModuleTest` per module; `ApplicationModules.verify()` |
 | End-to-end | `integration_test` running against the Docker Compose backend (in CI: Linux desktop build under Xvfb, a virtual display) | API tests at the HTTP level; the same tests guard the API during Stage 2 |
 
+### Levels of the "Pentagon" model
+
+Lab 4 maps the tests onto the six-layer "Pentagon" testing model (Kuzmych, Seniv; Lviv Polytechnic, 2026) and distributes the layers between environments by the authors' method (EEJET 3/2 (141), 2026, Table 1): every environment repeats the layers of the previous one and adds its own.
+
+| Layer | What it means here | Tests | Environment |
+|---|---|---|---|
+| L1 Unit | Isolated logic, mocks for the rest | backend unit classes (JUnit 5 + MockK, `ModularityTest`); client `flutter_test` logic and widget tests | every push, all environments |
+| L2 Local integration | Components together in a local, throwaway setup | backend `*IntegrationTest` and `*E2eTest` (the app inside the test JVM, Testcontainers PostgreSQL); client Drift tests and the guest-flow `integration_test/app_test.dart` (real SQLite in the browser, no server) | every push, all environments |
+| L3 Global integration | The **deployed** services over the network: backend container ↔ PostgreSQL, SMTP ↔ Mailpit, WebSocket, CORS, nginx serving the web build | `backend/src/globalTest` (`gradle globalIntegrationTest`) | DEV, TEST, PRE-PROD |
+| L4 Fault tolerance | Retries, circuit breakers under injected errors | not implemented (the monolith has no inter-service calls yet) | (TEST, PRE-PROD) |
+| L5 End-to-end | A business scenario through the UI against the deployed backend | `integration_test/full_stack_test.dart`: register in the UI, confirm with the link from the real email, create a list and a task, check it reached the server, sign in on a second empty device and see it synced | PRE-PROD |
+| L6 Chaos | Random infrastructure failures | not implemented | (PRE-PROD) |
+
 Coverage is measured with Kover (backend) and `flutter test --coverage` (client). The first tests to write:
 
 - **Unit:** creating the next occurrence of a repeating task (FR-3.6).
@@ -168,15 +181,18 @@ Coverage is measured with Kover (backend) and `flutter test --coverage` (client)
 ## Static analysis, CI/CD, environments
 
 - **Static analysis:** detekt + ktlint (backend), `dart analyze` with `very_good_analysis` (client), the Spring Modulith boundary check, and the OpenAPI spec check.
-- **CI (GitHub Actions)** runs on every push and PR: build → static analysis → tests → coverage gate.
-- **CD:** the backend is built into a Docker image and pushed to GHCR. The Flutter web build is published as a static site. Both are deployed to a test environment.
-- **Local development:** `docker compose up` starts PostgreSQL, MinIO, and Mailpit.
+- **One pipeline, `.github/workflows/pipeline.yml` (GitHub Actions)**, runs on every push to any branch. The branch chooses the environment; a job starts only when every job it `needs` is green, so a red test stops deployment.
+  1. **CI (every branch):** build of the two Docker images (in parallel with the checks), static analysis, L1, L2, coverage gates (≥ 80 %), in the reusable `backend.yml` and `app.yml`. The images are saved once as run artifacts.
+  2. **`dev` / `test` / `pre-prod` branches:** the images are loaded (not rebuilt) and started with `deploy/docker-compose.yml` (PostgreSQL, Mailpit, backend, nginx web client) on the runner as the GitHub Environment of the same name, then L3 runs against it; on `pre-prod` L5 runs too. The environment is torn down at the end of the job.
+  3. **`main` = prod:** after a required reviewer approves the `prod` environment, the images are pushed to GHCR (`ghcr.io/siriknikita/future-todo-backend`, `…/future-todo-app`) with the commit SHA and `latest` tags.
+- **Local development:** `docker compose up` starts PostgreSQL, MinIO, and Mailpit. `deploy/docker-compose.yml` reproduces a test environment locally from built images.
 
 ## Divergences from the plan (Part One)
 
 - Scope for now is the monolithic backend and the Flutter **web** client; mobile and desktop pipelines are not set up. The end-to-end level for the client therefore runs `integration_test` on web (`flutter drive` with chromedriver) instead of a Linux desktop build under Xvfb.
 - `docker-compose.yml` also contains a one-shot `minio-init` service that creates the attachments bucket.
-- CI is currently build, lint, test, and coverage only. The CD part (GHCR image, deploy to a test environment) and the OpenAPI drift check are not wired up yet. Both Dockerfiles are built in CI but not pushed.
+- The DEV / TEST / PRE-PROD environments are ephemeral: Docker Compose on the GitHub-hosted runner, created and destroyed by each pipeline run, not long-lived servers. PROD is the release registry (GHCR), not a running deployment. L4 and L6 of the Pentagon model are not implemented. The Flutter web build is shipped as the nginx image instead of a separate static site. The web image has the API address (`http://localhost:8080`) compiled in, so it fits the test environments only; a real deployment needs a rebuild with its own `API_BASE_URL`.
+- The OpenAPI drift check is not wired up yet.
 - Backend test levels are not separate Gradle tasks: everything runs under `test` and the levels are split by class name (`*IntegrationTest`, `*E2eTest`, the rest is unit). CI runs them as separate jobs through `--tests` filters. There is no Gradle wrapper committed yet.
 - Backend scope: there is no `files` module yet (no attachments, MinIO is unused), and the `notifications` push is a stub. FR-3.9 and server push are therefore not implemented.
 - The client's e2e test runs the guest flow on web and needs no backend.
@@ -193,6 +209,7 @@ Coverage is measured with Kover (backend) and `flutter test --coverage` (client)
 | Backend-issued JWTs | Keycloak / hosted identity provider | The SRS plans an in-house Identity Service. Keycloak adds a heavy service to run for what is a small feature set. |
 | Custom sync | PowerSync, ElectricSQL | The SRS requires a REST API and a dedicated Sync service with field-level conflict resolution. An off-the-shelf sync engine would replace both. |
 | Code-first OpenAPI with the spec committed | Spec-first code generation | Less generated code to maintain on the server. The committed spec plus the CI check still protects the API contract. |
+| GitHub Actions for CI/CD | GitLab CI, Jenkins | The code already lives on GitHub, so Actions needs no mirror, server, or extra account. PR checks, Environments with deployment history, GHCR, and Dependabot are built in. Hosted Ubuntu runners come with Docker, which Testcontainers and the Compose test environments need. Free for a public repo. GitLab CI would mean mirroring the repository; Jenkins means running and maintaining our own server and plugins. |
 | RabbitMQ (Stage 2) | Kafka | Simpler to operate, and enough for the expected event volume. Spring Modulith supports both. |
 
 ## Known constraints

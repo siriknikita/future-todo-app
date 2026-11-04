@@ -1,0 +1,34 @@
+name: Set up Flutter
+description: Pinned Flutter SDK, dependencies, Drift code generation and (optionally) the web platform files.
+inputs:
+  prepare-web:
+    description: Generate the uncommitted web platform files and fetch the Drift web assets.
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - uses: subosito/flutter-action@v2
+      with:
+        channel: stable
+        # Pinned so a new Flutter release cannot change lints or behavior under us.
+        # Keep in sync with app/Dockerfile and CLAUDE.md.
+        flutter-version: "3.38.5"
+        cache: true
+    - name: Dependencies and code generation (Drift)
+      shell: bash
+      working-directory: app
+      run: |
+        flutter pub get
+        dart run build_runner build --delete-conflicting-outputs --force-jit
+    - name: Prepare web platform (not committed yet)
+      if: inputs.prepare-web == 'true'
+      shell: bash
+      working-directory: app
+      run: |
+        # Keep the committed web files, generate the rest, fetch Drift web assets.
+        cp web/index.html web/manifest.json "$RUNNER_TEMP"/
+        flutter create . --platforms web --project-name future_todo --org com.futuretodo
+        cp "$RUNNER_TEMP/index.html" "$RUNNER_TEMP/manifest.json" web/
+        rm -f test/widget_test.dart
+        [ -f web/sqlite3.wasm ] || curl -fsSL -o web/sqlite3.wasm https://github.com/simolus3/sqlite3.dart/releases/latest/download/sqlite3.wasm
+        [ -f web/drift_worker.js ] || curl -fsSL -o web/drift_worker.js https://github.com/simolus3/drift/releases/latest/download/drift_worker.js

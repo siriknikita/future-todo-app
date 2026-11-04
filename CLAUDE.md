@@ -11,9 +11,9 @@ The course is a chain of labs that build on the same codebase:
 | Lab | Goal | What the report must show |
 |---|---|---|
 | 1 (done) | Requirements spec (SRS) for Future Todo and justification for choosing XP. Roles set up in Jira | SRS, reasoning for the methodology choice, Jira board screenshots |
-| **2 (current)** | Build the product as a team following XP, with **at least one unit, one integration, and one e2e test** | Source code, a test report, a log of the program running, Jira screenshots, and pros/cons of XP |
-| 3 | Refactor the Lab 2 code. Each code flaw found becomes its own Jira task | Code before and after refactoring, the flaws and how they were fixed |
-| 4 | CI/CD pipeline. CI: build, static analysis, and tests on every change. CD: build an artifact and deploy it to a test environment | Pipeline config, a diagram of its stages, one successful run and one run **stopped by failing tests**. Optional extra task: add the "Pentagon" testing model's L3/L5 levels and split the test levels across environments |
+| 2 (done) | Build the product as a team following XP, with **at least one unit, one integration, and one e2e test** | Source code, a test report, a log of the program running, Jira screenshots, and pros/cons of XP |
+| 3 (done) | Refactor the Lab 2 code. Each code flaw found becomes its own Jira task | Code before and after refactoring, the flaws and how they were fixed |
+| **4 (current)** | CI/CD pipeline. CI: build, static analysis, and tests on every change. CD: build an artifact and deploy it to a test environment | Pipeline config, a diagram of its stages, one successful run and one run **stopped by failing tests**. Optional extra task: add the "Pentagon" testing model's L3/L5 levels and split the test levels across environments |
 
 What this means for the work:
 - Lab 3 needs the Lab 2 code in its original form. Keep that state recoverable from git (e.g. tag the end of Lab 2) and don't sneak refactors into Lab 2 that Lab 3 is meant to show.
@@ -46,15 +46,16 @@ There is no Gradle wrapper yet: run `gradle wrapper` once (then use `./gradlew` 
 | Everything | `gradle test` |
 | Coverage gate (>= 80%) | `gradle koverHtmlReport koverVerify` (report: `build/reports/kover/html`) |
 | Single test class / method | `gradle test --tests "com.futuretodo.FutureTodoE2eTest"` / `--tests "*SomeTest.someMethod"` |
+| L3 global integration tests (against a **deployed** stack, see "Test environment" below) | `gradle globalIntegrationTest -PbaseUrl=http://localhost:8080 -PmailpitUrl=http://localhost:8025 -PwebUrl=http://localhost:8081` |
 | Jar / Docker image | `gradle bootJar` / `docker build -t future-todo-backend backend` |
 
-When adding a test class, name it `*Test` (unit), `*IntegrationTest` or `*E2eTest`, and add new unit classes to the unit filter list in `.github/workflows/backend.yml`. The filter matches class names, not file names, so list every class in a file that holds several.
+When adding a test class, name it `*Test` (unit), `*IntegrationTest` or `*E2eTest`, and add new unit classes to the unit filter list in `.github/workflows/backend.yml`. Tests against a deployed environment go into the separate `src/globalTest` source set (`*GlobalTest`); they never run under `gradle test`. The filter matches class names, not file names, so list every class in a file that holds several.
 
 Config (env vars): `DB_URL`/`DB_USER`/`DB_PASSWORD` (defaults match `docker-compose.yml`), `MAIL_HOST`/`MAIL_PORT`, `JWT_SECRET`, `FRONTEND_URL`, `CORS_ORIGINS`, `ADMIN_EMAIL`/`ADMIN_PASSWORD`, `OAUTH_GOOGLE_CLIENT_ID`/`OAUTH_APPLE_CLIENT_ID`/`OAUTH_MICROSOFT_CLIENT_ID`.
 
 ### App (`app/`, run from that directory)
 
-Use Flutter **3.38.5**, the version pinned in `.github/workflows/app.yml` and `app/Dockerfile` (newer releases add lints and deprecations that fail `flutter analyze --fatal-infos`). Bump all three together.
+Use Flutter **3.38.5**, the version pinned in `.github/actions/setup-flutter/action.yml` and `app/Dockerfile` (newer releases add lints and deprecations that fail `flutter analyze --fatal-infos`). Bump all three together.
 
 Only `web/index.html` and `web/manifest.json` are committed. Before the first run: `flutter create . --platforms web` (keep the committed web files; delete the generated `test/widget_test.dart`) and put `sqlite3.wasm` and `drift_worker.js` into `web/` (CI and the Dockerfile do this automatically). Drift tests use an in-memory SQLite and need system `libsqlite3` (`apt install libsqlite3-dev`).
 
@@ -62,16 +63,33 @@ Only `web/index.html` and `web/manifest.json` are committed. Before the first ru
 |---|---|
 | Install deps | `flutter pub get` |
 | Generate code (Drift) | `dart run build_runner build --delete-conflicting-outputs --force-jit` |
-| Lint | `dart format --set-exit-if-changed lib test` and `flutter analyze --fatal-infos` |
+| Lint | `dart format --set-exit-if-changed lib test integration_test` and `flutter analyze --fatal-infos` |
 | Unit + widget tests with coverage | `flutter test --coverage` (report in `coverage/lcov.info`; CI requires >= 80%) |
 | Single test file / test by name | `flutter test test/core/hlc_test.dart` / `flutter test --plain-name "some name"` |
 | E2E on web (guest flow, no backend; needs chromedriver on port 4444) | `chromedriver --port=4444 &` then `flutter drive --driver=test_driver/integration_test.dart --target=integration_test/app_test.dart -d web-server --browser-name=chrome --headless` |
+| L5 E2E on web against a **deployed** stack (register -> email -> sync between two devices) | `flutter drive --driver=test_driver/integration_test.dart --target=integration_test/full_stack_test.dart -d web-server --web-port=8082 --browser-name=chrome --headless --dart-define=API_BASE_URL=http://localhost:8080 --dart-define=MAILPIT_URL=http://localhost:8025` (port 8082 is the CORS origin the test environment allows) |
 | Run in Chrome against the backend | `flutter run -d chrome --web-port 8081 --dart-define=API_BASE_URL=http://localhost:8080` |
 | Web build / Docker image | `flutter build web --release --dart-define=API_BASE_URL=...` / `docker build -t future-todo-app app` |
 
-### CI (`.github/workflows/`)
+### Test environment (`deploy/docker-compose.yml`)
 
-`backend.yml` and `app.yml` are path-filtered and run on pushes to `main` and on pull requests. Each test level is its own job (`unit-tests`, `integration-tests`, `e2e-tests` for the backend; `unit-tests`, `e2e-web` for the app, which needs no backend), so a failing level stops the pipeline on its own job. The pipelines are CI only (build, lint, test, coverage); there is no deploy yet.
+The whole stack (PostgreSQL, Mailpit, backend, nginx web client) from prebuilt images, nothing is built here: `BACKEND_IMAGE=future-todo-backend:ci WEB_IMAGE=future-todo-app:ci docker compose -f deploy/docker-compose.yml up -d --wait` (backend 8080, web 8081, Mailpit UI/API 8025; override with `BACKEND_PORT`, `WEB_PORT`, `MAILPIT_PORT`; `ENVIRONMENT` names the Compose project). Build the images first with `docker build -t future-todo-backend:ci backend` and `docker build --build-arg API_BASE_URL=http://localhost:8080 -t future-todo-app:ci app`. Tear down with `docker compose -f deploy/docker-compose.yml down -v`.
+
+### CI/CD (`.github/workflows/`)
+
+`pipeline.yml` is the only triggered workflow. It follows the method of integrating the "Pentagon" testing model into CI/CD (Kuzmych & Seniv, EEJET 2026): the branch picks the environment, and each environment runs all checks of the previous ones plus its own layers.
+
+| Branch | Environment | What runs |
+|---|---|---|
+| any (feature branches, PRs) | none (CI only) | reusable `backend.yml` + `app.yml`: Docker image build, static analysis, L1 unit, L2 local integration (Testcontainers / in-process API tests / guest-flow UI test), coverage gates |
+| `dev` | GitHub Environment `dev` | CI, then deploy the run's images with `deploy/docker-compose.yml` on the runner, then L3 `globalIntegrationTest` |
+| `test` | `test` | same as `dev` (L4 fault tolerance is not implemented) |
+| `pre-prod` | `pre-prod` | same, plus L5 `full_stack_test.dart` (L6 chaos is not implemented) |
+| `main` (= prod) | `prod`, **required reviewer** | CI, then after manual approval the images are pushed to `ghcr.io/siriknikita/future-todo-{backend,app}` (`:<sha>`, `:latest`) |
+
+Promote by fast-forwarding: `git push origin <commit>:dev`, then `:test`, `:pre-prod`; `main` gets changes through squash-merged PRs. Every job `needs` the earlier ones, so a red test stops deployment.
+
+Shared setup lives in composite actions under `.github/actions/` (`setup-gradle`, `setup-flutter`, `deploy-stack`). Validate workflow edits with `actionlint`.
 
 ## Stack and architecture
 
