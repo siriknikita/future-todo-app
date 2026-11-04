@@ -77,7 +77,7 @@ jobs:
         if: env.ENVIRONMENT == 'pre-prod'
         with:
           prepare-web: "true"
-      - uses: nanasess/setup-chromedriver@v2
+      - uses: nanasess/setup-chromedriver@v3
         if: env.ENVIRONMENT == 'pre-prod'
       - name: Step 9 · L5 end-to-end scenario through the UI (PRE-PROD)
         if: env.ENVIRONMENT == 'pre-prod'

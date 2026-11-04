@@ -70,7 +70,7 @@ jobs:
         with:
           prepare-web: "true"
       - name: Set up chromedriver
-        uses: nanasess/setup-chromedriver@v2
+        uses: nanasess/setup-chromedriver@v3
       - name: Run the guest-flow integration test
         run: |
           chromedriver --port=4444 &
