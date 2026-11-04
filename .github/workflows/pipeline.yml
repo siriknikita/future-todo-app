@@ -1,4 +1,17 @@
-# Future Todo CI/CD pipeline (Lab 4). Every push to any branch runs it.
+# Future Todo CI/CD pipeline (Lab 4).
+#
+# Implements the method of automated integration of the "Pentagon" testing model
+# into CI/CD (Kuzmych, Seniv, EEJET 2026): layers are distributed between four
+# environments cumulatively, and the environment is chosen by the branch.
+#
+#   branch      environment  layers                          here
+#   any         (CI only)    build, static analysis, L1, L2  backend.yml + app.yml
+#   dev         DEV          + deploy, L3                    deploy job
+#   test        TEST         + L4 (not implemented yet)      deploy job
+#   pre-prod    PRE-PROD     + L5, L6 (L6 not implemented)   deploy job
+#   main        PROD         L1, L2 -> manual approval ->    prod job
+#                            deploy (publish images to GHCR)
+#
 # Every job `needs` the previous ones, so a failing check stops everything after it.
 name: CI/CD pipeline
 
@@ -58,6 +71,8 @@ jobs:
           name: l3-global-integration-report-${{ github.ref_name }}
           path: backend/build/reports/tests/globalIntegrationTest
 
+      # Step 8 · L4 fault tolerance (TEST, PRE-PROD) is not implemented yet.
+
       - uses: ./.github/actions/setup-flutter
         if: env.ENVIRONMENT == 'pre-prod'
         with:
@@ -83,6 +98,8 @@ jobs:
           jq -r '.steps[]' build/integration_response_data.json
           jq -r '"### L5 scenario\n" + (.steps | map("- " + .) | join("\n"))' \
             build/integration_response_data.json >> "$GITHUB_STEP_SUMMARY"
+
+      # Step 10 · L6 chaos testing (PRE-PROD) is not implemented yet.
 
       - name: Service logs
         if: failure()
