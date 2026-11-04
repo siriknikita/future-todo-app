@@ -35,7 +35,7 @@ jobs:
       - uses: ./.github/actions/setup-gradle
       - name: Unit tests (JUnit 5 + MockK)
         run: gradle test --tests "*AuthServiceTest" --tests "*AdminBootstrapTest" --tests "*SessionServiceTest" --tests "*MailServiceTest" --tests "*JwtAndLimiterTest" --tests "*LwwTest" --tests "*HlcClockTest" --tests "*SecureTokensTest" --tests "*RecurrenceCalculatorTest" --tests "*EntitySpecsTest" --tests "*SearchAndSmartListTest" --tests "*ModularityTest"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: backend-unit-test-report
@@ -50,7 +50,7 @@ jobs:
       - uses: ./.github/actions/setup-gradle
       - name: Integration tests
         run: gradle test --tests "*IntegrationTest"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: backend-integration-test-report
@@ -65,7 +65,7 @@ jobs:
       - uses: ./.github/actions/setup-gradle
       - name: API tests at the HTTP level (app started inside the test JVM)
         run: gradle test --tests "*E2eTest"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: backend-e2e-test-report
@@ -84,7 +84,7 @@ jobs:
       - name: HTML coverage report
         if: always()
         run: gradle koverHtmlReport
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: backend-coverage-report
@@ -105,7 +105,7 @@ jobs:
             -t future-todo-backend:ci backend
           docker save future-todo-backend:ci | gzip > "$RUNNER_TEMP/backend.tar.gz"
       # The one image every environment deploys (and main publishes to GHCR).
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: backend-image
           path: ${{ runner.temp }}/backend.tar.gz

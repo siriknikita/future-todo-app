@@ -53,7 +53,7 @@ jobs:
               printf "Line coverage: %.1f%% (min %s%%)\n", pct, min
               if (pct < min) exit 1
             }' coverage/lcov.info
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: app-coverage
@@ -96,7 +96,7 @@ jobs:
             --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
             -t future-todo-app:ci app
           docker save future-todo-app:ci | gzip > "$RUNNER_TEMP/web.tar.gz"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: web-image
           path: ${{ runner.temp }}/web.tar.gz
