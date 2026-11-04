@@ -192,7 +192,7 @@ object RecurrenceCalculator {
 
     private fun nextWeekday(base: LocalDate): LocalDate {
         var date = base.plusDays(1)
-        while (date.dayOfWeek == DayOfWeek.SUNDAY) {
+        while (date.dayOfWeek == DayOfWeek.SATURDAY || date.dayOfWeek == DayOfWeek.SUNDAY) {
             date = date.plusDays(1)
         }
         return date
