@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-gradle
       - name: ktlint
         run: gradle ktlintCheck
@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-gradle
       - name: Unit tests (JUnit 5 + MockK)
         run: gradle test --tests "*AuthServiceTest" --tests "*AdminBootstrapTest" --tests "*SessionServiceTest" --tests "*MailServiceTest" --tests "*JwtAndLimiterTest" --tests "*LwwTest" --tests "*HlcClockTest" --tests "*SecureTokensTest" --tests "*RecurrenceCalculatorTest" --tests "*EntitySpecsTest" --tests "*SearchAndSmartListTest" --tests "*ModularityTest"
@@ -46,7 +46,7 @@ jobs:
     runs-on: ubuntu-latest # Docker is preinstalled, Testcontainers uses it
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-gradle
       - name: Integration tests
         run: gradle test --tests "*IntegrationTest"
@@ -61,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-gradle
       - name: API tests at the HTTP level (app started inside the test JVM)
         run: gradle test --tests "*E2eTest"
@@ -77,7 +77,7 @@ jobs:
     timeout-minutes: 20
     needs: [unit-tests, integration-tests, e2e-tests]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-gradle
       - name: Verify coverage (runs all tests; 80% rule is in build.gradle.kts)
         run: gradle koverVerify
@@ -97,7 +97,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build the image (the jar is compiled inside, see backend/Dockerfile)
         working-directory: .
         run: |

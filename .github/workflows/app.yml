@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-flutter
       - name: Format check
         run: dart format --output=none --set-exit-if-changed lib test integration_test
@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-flutter
       - name: Install system SQLite (Drift tests use NativeDatabase.memory())
         run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
@@ -65,7 +65,7 @@ jobs:
     timeout-minutes: 20
     needs: [unit-tests]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-flutter
         with:
           prepare-web: "true"
@@ -86,7 +86,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build the image (Flutter web build inside, see app/Dockerfile)
         working-directory: .
         run: |

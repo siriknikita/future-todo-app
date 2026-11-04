@@ -54,7 +54,7 @@ jobs:
       # The L5 test client is served here; deploy/docker-compose.yml allows it in CORS.
       E2E_CLIENT_PORT: "8082"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Step 6 · Deploy the images built in this run
         uses: ./.github/actions/deploy-stack
