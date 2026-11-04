@@ -26,5 +26,5 @@ flutter run -d chrome --web-port 8081 --dart-define=API_BASE_URL=http://localhos
 | MinIO console | http://localhost:9001 |
 | PostgreSQL | localhost:5432 |
 
-Tests and linters: see [CLAUDE.md](CLAUDE.md#commands). CI runs from `.github/workflows/` (`backend.yml`, `app.yml`).
+Tests and linters: see [CLAUDE.md](CLAUDE.md#commands). The CI/CD pipeline is `.github/workflows/pipeline.yml` (branches `dev`, `test`, `pre-prod` deploy to the environment of the same name, `main` is prod; see [CLAUDE.md](CLAUDE.md#cicd-githubworkflows)).
 

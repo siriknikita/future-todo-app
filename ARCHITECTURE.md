@@ -181,15 +181,18 @@ Coverage is measured with Kover (backend) and `flutter test --coverage` (client)
 ## Static analysis, CI/CD, environments
 
 - **Static analysis:** detekt + ktlint (backend), `dart analyze` with `very_good_analysis` (client), the Spring Modulith boundary check, and the OpenAPI spec check.
-- **CI (GitHub Actions)** runs on every push and PR: build → static analysis → tests → coverage gate.
-- **CD:** the backend is built into a Docker image and pushed to GHCR. The Flutter web build is published as a static site. Both are deployed to a test environment.
-- **Local development:** `docker compose up` starts PostgreSQL, MinIO, and Mailpit.
+- **One pipeline, `.github/workflows/pipeline.yml` (GitHub Actions)**, runs on every push to any branch. The branch chooses the environment; a job starts only when every job it `needs` is green, so a red test stops deployment.
+  1. **CI (every branch):** build of the two Docker images (in parallel with the checks), static analysis, L1, L2, coverage gates (≥ 80 %), in the reusable `backend.yml` and `app.yml`. The images are saved once as run artifacts.
+  2. **`dev` / `test` / `pre-prod` branches:** the images are loaded (not rebuilt) and started with `deploy/docker-compose.yml` (PostgreSQL, Mailpit, backend, nginx web client) on the runner as the GitHub Environment of the same name, then L3 runs against it; on `pre-prod` L5 runs too. The environment is torn down at the end of the job.
+  3. **`main` = prod:** after a required reviewer approves the `prod` environment, the images are pushed to GHCR (`ghcr.io/siriknikita/future-todo-backend`, `…/future-todo-app`) with the commit SHA and `latest` tags.
+- **Local development:** `docker compose up` starts PostgreSQL, MinIO, and Mailpit. `deploy/docker-compose.yml` reproduces a test environment locally from built images.
 
 ## Divergences from the plan (Part One)
 
 - Scope for now is the monolithic backend and the Flutter **web** client; mobile and desktop pipelines are not set up. The end-to-end level for the client therefore runs `integration_test` on web (`flutter drive` with chromedriver) instead of a Linux desktop build under Xvfb.
 - `docker-compose.yml` also contains a one-shot `minio-init` service that creates the attachments bucket.
-- CI is currently build, lint, test, and coverage only. The CD part (GHCR image, deploy to a test environment) and the OpenAPI drift check are not wired up yet. Both Dockerfiles are built in CI but not pushed.
+- The DEV / TEST / PRE-PROD environments are ephemeral: Docker Compose on the GitHub-hosted runner, created and destroyed by each pipeline run, not long-lived servers. PROD is the release registry (GHCR), not a running deployment. L4 and L6 of the Pentagon model are not implemented. The Flutter web build is shipped as the nginx image instead of a separate static site. The web image has the API address (`http://localhost:8080`) compiled in, so it fits the test environments only; a real deployment needs a rebuild with its own `API_BASE_URL`.
+- The OpenAPI drift check is not wired up yet.
 - Backend test levels are not separate Gradle tasks: everything runs under `test` and the levels are split by class name (`*IntegrationTest`, `*E2eTest`, the rest is unit). CI runs them as separate jobs through `--tests` filters. There is no Gradle wrapper committed yet.
 - Backend scope: there is no `files` module yet (no attachments, MinIO is unused), and the `notifications` push is a stub. FR-3.9 and server push are therefore not implemented.
 - The client's e2e test runs the guest flow on web and needs no backend.
