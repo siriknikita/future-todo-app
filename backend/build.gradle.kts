@@ -110,6 +110,12 @@ ktlint {
 }
 
 kover {
+    currentProject {
+        // L3 needs a deployed environment; keep it out of the coverage run of `koverVerify`.
+        instrumentation {
+            disabledForTestTasks.add("globalIntegrationTest")
+        }
+    }
     reports {
         filters {
             excludes {
