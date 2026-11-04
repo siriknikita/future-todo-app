@@ -65,7 +65,7 @@ jobs:
         run: >-
           gradle globalIntegrationTest
           -PbaseUrl="$BACKEND_URL" -PmailpitUrl="$MAILPIT_URL" -PwebUrl="$WEB_URL"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: l3-global-integration-report-${{ github.ref_name }}
