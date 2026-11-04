@@ -193,6 +193,7 @@ Coverage is measured with Kover (backend) and `flutter test --coverage` (client)
 | Backend-issued JWTs | Keycloak / hosted identity provider | The SRS plans an in-house Identity Service. Keycloak adds a heavy service to run for what is a small feature set. |
 | Custom sync | PowerSync, ElectricSQL | The SRS requires a REST API and a dedicated Sync service with field-level conflict resolution. An off-the-shelf sync engine would replace both. |
 | Code-first OpenAPI with the spec committed | Spec-first code generation | Less generated code to maintain on the server. The committed spec plus the CI check still protects the API contract. |
+| GitHub Actions for CI/CD | GitLab CI, Jenkins | The code already lives on GitHub, so Actions needs no mirror, server, or extra account. PR checks, Environments with deployment history, GHCR, and Dependabot are built in. Hosted Ubuntu runners come with Docker, which Testcontainers and the Compose test environments need. Free for a public repo. GitLab CI would mean mirroring the repository; Jenkins means running and maintaining our own server and plugins. |
 | RabbitMQ (Stage 2) | Kafka | Simpler to operate, and enough for the expected event volume. Spring Modulith supports both. |
 
 ## Known constraints
