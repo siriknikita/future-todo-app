@@ -27,7 +27,7 @@ jobs:
 
   # ---------- Steps 6-10: deploy to DEV / TEST / PRE-PROD and test there ----------
   deploy:
-    name: Deploy to ${{ github.ref_name }}
+    name: Deploy to ${{ github.ref_name }} + Pentagon layers
     needs: [backend, app]
     if: contains(fromJSON('["dev", "test", "pre-prod"]'), github.ref_name)
     runs-on: ubuntu-latest
@@ -43,6 +43,18 @@ jobs:
 
       - name: Step 6 · Deploy the images built in this run
         uses: ./.github/actions/deploy-stack
+
+      - uses: ./.github/actions/setup-gradle
+      - name: Step 7 · L3 global integration tests (DEV, TEST, PRE-PROD)
+        working-directory: backend
+        run: >-
+          gradle globalIntegrationTest
+          -PbaseUrl="$BACKEND_URL" -PmailpitUrl="$MAILPIT_URL" -PwebUrl="$WEB_URL"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: l3-global-integration-report-${{ github.ref_name }}
+          path: backend/build/reports/tests/globalIntegrationTest
 
       - name: Service logs
         if: failure()

@@ -17,6 +17,12 @@ repositories {
 
 extra["springModulithVersion"] = "1.3.1"
 
+// Level L3 of the "Pentagon" model: black-box tests against a deployed environment.
+// They need no application code, only an HTTP client, and are never part of `gradle test`.
+val globalTest: SourceSet by sourceSets.creating
+val globalTestImplementation: Configuration by configurations.getting
+val globalTestRuntimeOnly: Configuration by configurations.getting
+
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-security")
@@ -44,6 +50,10 @@ dependencies {
     testImplementation("org.testcontainers:postgresql")
     testImplementation("org.testcontainers:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
+    globalTestImplementation("org.junit.jupiter:junit-jupiter")
+    globalTestImplementation("com.fasterxml.jackson.module:jackson-module-kotlin")
+    globalTestRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 dependencyManagement {
@@ -63,9 +73,23 @@ tasks.withType<Test> {
     useJUnitPlatform()
 }
 
+tasks.register<Test>("globalIntegrationTest") {
+    description = "L3 global integration tests against a deployed stack (-PbaseUrl, -PmailpitUrl, -PwebUrl)."
+    group = "verification"
+    testClassesDirs = globalTest.output.classesDirs
+    classpath = globalTest.runtimeClasspath
+    listOf("baseUrl", "mailpitUrl", "webUrl").forEach { name ->
+        providers.gradleProperty(name).orNull?.let { systemProperty(name, it) }
+    }
+    // The result depends on the deployed environment, not on the inputs Gradle can see.
+    outputs.upToDateWhen { false }
+    shouldRunAfter(tasks.test)
+}
+
 detekt {
     buildUponDefaultConfig = true
     config.setFrom(files("config/detekt/detekt.yml"))
+    source.setFrom(files("src/main/kotlin", "src/test/kotlin", "src/globalTest/kotlin"))
 }
 
 // Spring dependency management bumps Kotlin on every configuration; detekt only runs
