@@ -1,21 +1,10 @@
+# Backend CI, steps 2-5 of the pipeline (build, static analysis, L1, L2). Called by
+# pipeline.yml on every push; not triggered on its own. L2 = local integration: the
+# application runs inside the test JVM against a Testcontainers PostgreSQL.
 name: Backend CI
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "backend/**"
-      - "api/**"
-      - ".github/workflows/backend.yml"
-  pull_request:
-    paths:
-      - "backend/**"
-      - "api/**"
-      - ".github/workflows/backend.yml"
-
-concurrency:
-  group: backend-${{ github.ref }}
-  cancel-in-progress: true
+  workflow_call:
 
 permissions:
   contents: read
@@ -26,34 +15,24 @@ defaults:
 
 jobs:
   lint:
-    name: Lint (ktlint + detekt)
+    name: Static analysis (ktlint + detekt)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.11.1" # no wrapper committed yet
+      - uses: ./.github/actions/setup-gradle
       - name: ktlint
         run: gradle ktlintCheck
       - name: detekt
         run: gradle detekt
 
   unit-tests:
-    name: Unit tests
+    name: L1 Unit tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.11.1" # no wrapper committed yet
+      - uses: ./.github/actions/setup-gradle
       - name: Unit tests (JUnit 5 + MockK)
         run: gradle test --tests "*AuthServiceTest" --tests "*AdminBootstrapTest" --tests "*SessionServiceTest" --tests "*MailServiceTest" --tests "*JwtAndLimiterTest" --tests "*LwwTest" --tests "*HlcClockTest" --tests "*SecureTokensTest" --tests "*RecurrenceCalculatorTest" --tests "*EntitySpecsTest" --tests "*SearchAndSmartListTest" --tests "*ModularityTest"
       - uses: actions/upload-artifact@v4
@@ -63,17 +42,12 @@ jobs:
           path: backend/build/reports/tests/test
 
   integration-tests:
-    name: Integration tests (Testcontainers)
+    name: L2 Local integration tests (Testcontainers)
     runs-on: ubuntu-latest # Docker is preinstalled, Testcontainers uses it
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.11.1" # no wrapper committed yet
+      - uses: ./.github/actions/setup-gradle
       - name: Integration tests
         run: gradle test --tests "*IntegrationTest"
       - uses: actions/upload-artifact@v4
@@ -83,18 +57,13 @@ jobs:
           path: backend/build/reports/tests/test
 
   e2e-tests:
-    name: End-to-end API tests
+    name: L2 In-process API tests (Testcontainers)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.11.1" # no wrapper committed yet
-      - name: E2E tests (HTTP level, Testcontainers)
+      - uses: ./.github/actions/setup-gradle
+      - name: API tests at the HTTP level (app started inside the test JVM)
         run: gradle test --tests "*E2eTest"
       - uses: actions/upload-artifact@v4
         if: always()
@@ -105,16 +74,11 @@ jobs:
   coverage:
     name: Coverage gate (Kover >= 80%)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [unit-tests, integration-tests, e2e-tests]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.11.1" # no wrapper committed yet
+      - uses: ./.github/actions/setup-gradle
       - name: Verify coverage (runs all tests; 80% rule is in build.gradle.kts)
         run: gradle koverVerify
       - name: HTML coverage report
@@ -126,21 +90,24 @@ jobs:
           name: backend-coverage-report
           path: backend/build/reports/kover/html
 
+  # Step 2 of the method: the artifact is built in parallel with the checks; the
+  # pipeline deploys it only after every check of this workflow has passed.
   build:
-    name: Build jar and Docker image
+    name: Build artifact (Docker image)
     runs-on: ubuntu-latest
-    needs: [lint, coverage]
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.11.1" # no wrapper committed yet
-      - name: Assemble
-        run: gradle bootJar -x test
-      - name: Build Docker image (not pushed)
+      - name: Build the image (the jar is compiled inside, see backend/Dockerfile)
         working-directory: .
-        run: docker build -t future-todo-backend:ci backend
+        run: |
+          docker build --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            -t future-todo-backend:ci backend
+          docker save future-todo-backend:ci | gzip > "$RUNNER_TEMP/backend.tar.gz"
+      # The one image every environment deploys (and main publishes to GHCR).
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-image
+          path: ${{ runner.temp }}/backend.tar.gz
+          retention-days: 7
+          compression-level: 0 # already gzipped

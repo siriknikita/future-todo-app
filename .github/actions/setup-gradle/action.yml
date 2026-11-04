@@ -1,0 +1,12 @@
+name: Set up JDK 21 and Gradle
+description: Temurin 21 and Gradle 8.11.1 with the dependency cache (no wrapper is committed yet).
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: "21"
+    - uses: gradle/actions/setup-gradle@v4
+      with:
+        gradle-version: "8.11.1"

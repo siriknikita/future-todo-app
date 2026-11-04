@@ -1,0 +1,26 @@
+# Future Todo CI/CD pipeline (Lab 4). Every push to any branch runs it.
+# Every job `needs` the previous ones, so a failing check stops everything after it.
+name: CI/CD pipeline
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+concurrency:
+  group: pipeline-${{ github.ref }}
+  # Never cancel a production run halfway through publishing.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------- Steps 2-5: build, static analysis, L1, L2 (every branch) ----------
+  backend:
+    name: CI · Backend
+    uses: ./.github/workflows/backend.yml
+
+  app:
+    name: CI · App
+    uses: ./.github/workflows/app.yml
