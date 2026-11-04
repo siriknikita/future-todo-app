@@ -1,0 +1,77 @@
+# Environment of the CD stage: the whole Future Todo stack started from the images the
+# pipeline built (never rebuilt here). pipeline.yml deploys it as DEV, TEST or PRE-PROD,
+# depending on the branch, and then runs the Pentagon layers of that environment against it.
+#
+#   BACKEND_IMAGE=future-todo-backend:ci WEB_IMAGE=future-todo-app:ci \
+#     docker compose -f deploy/docker-compose.yml up -d --wait
+#
+# Ports: BACKEND_PORT (8080), WEB_PORT (8081), MAILPIT_PORT (8025), E2E_CLIENT_PORT (8082).
+# Locally, set BACKEND_PORT if 8080 is taken (and rebuild the web image with the
+# matching API_BASE_URL if you want to click through the deployed web client).
+name: future-todo-${ENVIRONMENT:-test}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: futuretodo
+      POSTGRES_USER: futuretodo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-test-env-password}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U futuretodo -d futuretodo"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  mailpit:
+    image: axllent/mailpit:v1.31.5
+    environment:
+      # The browser-based L5 test reads the confirmation email through this API.
+      MP_API_CORS: "*"
+    ports:
+      - "${MAILPIT_PORT:-8025}:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  backend:
+    image: ${BACKEND_IMAGE:-future-todo-backend:ci}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/futuretodo
+      DB_USER: futuretodo
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-test-env-password}
+      MAIL_HOST: mailpit
+      MAIL_PORT: "1025"
+      JWT_SECRET: ${JWT_SECRET:-test-env-only-secret-test-env-only-secret-0123456789}
+      # Links in emails point at the deployed web client.
+      FRONTEND_URL: http://localhost:${WEB_PORT:-8081}
+      # Only the deployed web client and the L5 test client (flutter drive) may call the API.
+      CORS_ORIGINS: http://localhost:${WEB_PORT:-8081},http://localhost:${E2E_CLIENT_PORT:-8082}
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q UP"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 10s
+
+  web:
+    image: ${WEB_IMAGE:-future-todo-app:ci}
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-8081}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ > /dev/null"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
